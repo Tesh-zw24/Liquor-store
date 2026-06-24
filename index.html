@@ -1,259 +1,324 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Millet Electronics POS</title>
-  <link rel="stylesheet" href="assets/style.css"/>
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="assets/style.css" />
 </head>
-
 <body>
   <div id="loginScreen" class="login-screen">
     <div class="login-card">
-      <img src="assets/millet-logo.jpeg" alt="Millet Electronics" class="login-logo"/>
-      <h1>Millet Electronics</h1>
-      <p>Login to continue</p>
-
+      <img src="assets/millet-logo.jpeg" alt="Millet Electronics" class="login-logo" />
+      <h1>Millet Electronics POS</h1>
+      <p>Sign in to continue</p>
       <label>Email
-        <input id="email" type="email" placeholder="cashier@millet.com"/>
+        <input id="email" type="email" autocomplete="email" placeholder="email@example.com" />
       </label>
-
       <label>Password
-        <input id="password" type="password" placeholder="Enter password"/>
+        <input id="password" type="password" autocomplete="current-password" placeholder="Password" onkeydown="if(event.key==='Enter') login()" />
       </label>
-
       <button onclick="login()">Login</button>
       <div id="loginMessage"></div>
     </div>
   </div>
 
-  <div id="app" class="hidden app-shell">
+  <div id="app" class="app-shell hidden">
     <aside class="sidebar">
       <div class="brand">
-        <img src="assets/millet-logo.jpeg" class="sidebar-logo" alt="Millet Electronics"/>
+        <img src="assets/millet-logo.jpeg" alt="Millet Electronics" class="sidebar-logo" />
         <h2>Millet Electronics</h2>
-        <p id="userInfo"></p>
+        <p id="userInfo">User</p>
       </div>
 
       <nav class="side-nav">
-        <button onclick="openPanel('dashboardPanel')" class="nav-btn active">Dashboard</button>
-        <button onclick="openPanel('salesPanel')" class="nav-btn">Record Sale</button>
-        <button onclick="openPanel('stockPanel')" class="nav-btn supervisor-only">Add / Receive Stock</button>
-        <button onclick="openPanel('deductPanel')" class="nav-btn supervisor-only">Deduct Stock</button>
-        <button onclick="openPanel('stockTakePanel')" class="nav-btn supervisor-only">Stock Take</button>
-        <button onclick="openPanel('reportsPanel')" class="nav-btn supervisor-only">Reports</button>
-        <button onclick="openPanel('pastelPanel')" class="nav-btn supervisor-only">Pastel Auto Sync</button>
-        <button onclick="openPanel('movementsPanel')" class="nav-btn supervisor-only">Stock Movements</button>
-        <button onclick="openPanel('settingsPanel')" class="nav-btn supervisor-only">Settings</button>
-        <button onclick="openPanel('passwordPanel')" class="nav-btn">Change Password</button>
+        <button class="nav-btn active" onclick="openPanel('dashboardPanel')">Dashboard</button>
+        <button class="nav-btn" onclick="openPanel('salesPanel')">Record Sale</button>
+        <button class="nav-btn supervisor-only" onclick="openPanel('stockPanel')">Add / Receive Stock</button>
+        <button class="nav-btn supervisor-only" onclick="openPanel('deductPanel')">Deduct Stock</button>
+        <button class="nav-btn supervisor-only" onclick="openPanel('stockTakePanel')">Stock Take</button>
+        <button class="nav-btn" onclick="openPanel('reportsPanel')">Reports</button>
+        <button class="nav-btn supervisor-only" onclick="openPanel('pastelPanel')">Pastel Auto Sync</button>
+        <button class="nav-btn supervisor-only" onclick="openPanel('movementsPanel')">Stock Movements</button>
+        <button class="nav-btn supervisor-only" onclick="openPanel('settingsPanel')">Settings</button>
+        <button class="nav-btn" onclick="openPanel('passwordPanel')">Change Password</button>
+        <button class="logout" onclick="logout()">Logout</button>
       </nav>
-
-      <button class="logout" onclick="logout()">Logout</button>
     </aside>
 
     <main class="content">
       <section id="dashboardPanel" class="panel active-panel">
         <div class="page-title">
           <h1>Dashboard</h1>
-          <p>Overview only. Use the left menu to open each function separately.</p>
+          <p>Live sales, stock alerts, and performance summary.</p>
         </div>
         <div class="metrics">
-          <div class="metric">Today's Sales<strong id="todaySales">$0.00</strong></div>
-          <div class="metric">Today's Net Profit<strong id="todayProfit">$0.00</strong></div>
           <div class="metric">Products<strong id="productCount">0</strong></div>
-          <div class="metric">Most Sought Today<strong id="topProduct">No sales yet</strong></div>
+          <div class="metric">Today Sales<strong id="todaySales">$0.00</strong></div>
+          <div class="metric">Today Profit<strong id="todayProfit">$0.00</strong></div>
+          <div class="metric">Top Product<strong id="topProduct">No sales yet</strong></div>
         </div>
-        <div class="card"><h2>Low Stock Alerts</h2><div id="alerts"></div></div>
         <div class="card">
-          <h2>Stock List</h2>
-          <table><thead><tr><th>Product</th><th>Cost</th><th>Selling</th><th>Stock</th><th>Alert At</th></tr></thead><tbody id="stockTable"></tbody></table>
+          <h2>Low Stock Alerts</h2>
+          <div id="alerts"></div>
+        </div>
+        <div class="card">
+          <h2>Current Stock</h2>
+          <table>
+            <thead>
+              <tr><th>Product</th><th>Cost</th><th>Selling</th><th>Qty</th><th>Alert Level</th></tr>
+            </thead>
+            <tbody id="stockTable"></tbody>
+          </table>
         </div>
       </section>
 
-      <section id="salesPanel" class="panel">
-        <div class="page-title">
+      <section id="salesPanel" class="panel sales-panel-layout">
+        <div class="page-title compact-title">
           <h1>Record Sale</h1>
-          <p>Add several products to one receipt, then complete payment once.</p>
+          <p>Add products to one receipt, then complete payment once.</p>
         </div>
 
-        <div class="card">
+        <div class="card sale-entry-card compact-card">
           <h2>Add Product to Receipt</h2>
-          <div class="sale-entry-row">
+          <div class="sale-entry-row compact-sale-row">
             <label>Product
               <select id="saleProduct" onchange="onSaleProductChange()"></select>
             </label>
             <label>Quantity
-              <input id="saleQuantity" type="number" min="1" step="1" value="1" onkeydown="handleSaleQuantityKey(event)"/>
+              <input id="saleQuantity" type="number" min="1" step="1" value="1" onkeydown="handleSaleQuantityKey(event)" />
             </label>
             <button class="add-line-btn" onclick="addProductToReceipt()">Add / Enter</button>
           </div>
-          <p id="saleProductHint" class="muted">Select a product. Default quantity is 1.</p>
+          <p id="saleProductHint" class="muted compact-hint"></p>
           <div id="saleMessage"></div>
         </div>
 
-        <div class="card">
-          <h2>Current Receipt</h2>
+        <div class="sale-workspace">
+          <div class="card receipt-card compact-card">
+            <h2>Current Receipt</h2>
+            <div class="receipt-table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Action</th></tr>
+                </thead>
+                <tbody id="receiptItemsTable"></tbody>
+              </table>
+            </div>
+            <div class="receipt-summary compact-summary">
+              <div class="metric compact-metric">Total Amount<strong id="receiptGrandTotal">$0.00</strong></div>
+              <div class="metric compact-metric">Items on Receipt<strong id="receiptItemCount">0</strong></div>
+            </div>
+            <button class="danger small-btn" onclick="clearReceipt()">Clear Receipt</button>
+          </div>
+
+          <div class="card payment-card compact-card">
+            <h2>Payment</h2>
+            <div class="payment-grid">
+              <label>Currency
+                <select id="saleCurrency" onchange="onSaleCurrencyChange()">
+                  <option value="USD" selected>USD</option>
+                  <option value="ZAR">ZAR</option>
+                  <option value="ZWG">ZWG</option>
+                </select>
+              </label>
+              <label>Payment Method
+                <select id="paymentMethod" onchange="onPaymentMethodChange()">
+                  <option value="CASH" selected>CASH</option>
+                  <option value="POS">POS (SWIPE)</option>
+                  <option value="ECOCASH">ECOCASH</option>
+                </select>
+              </label>
+              <label>Amount Received
+                <input id="amountReceived" type="number" min="0" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()" />
+              </label>
+            </div>
+            <div class="payment-metrics compact-payment-metrics">
+              <div class="metric compact-metric">Total<strong id="paymentTotal">$0.00</strong></div>
+              <div class="metric compact-metric">Received<strong id="paymentAmountReceived">$0.00</strong></div>
+              <div class="metric compact-metric">Change<strong id="paymentChange">$0.00</strong></div>
+            </div>
+            <button onclick="recordSale()">Record Sale</button>
+          </div>
+        </div>
+
+        <div class="card recent-sales-card">
+          <h2>Recent Sales</h2>
           <table>
             <thead>
-              <tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Action</th></tr>
+              <tr><th>Date</th><th>Receipt</th><th>Product</th><th>Qty</th><th>Currency</th><th>Method</th><th>Revenue</th><th>Profit</th></tr>
             </thead>
-            <tbody id="receiptItemsTable"></tbody>
+            <tbody id="salesTable"></tbody>
           </table>
-
-          <div class="receipt-summary">
-            <div class="metric">Total Amount<strong id="receiptGrandTotal">$0.00</strong></div>
-            <div class="metric">Items on Receipt<strong id="receiptItemCount">0</strong></div>
-          </div>
-        </div>
-
-        <div class="card payment-card">
-          <h2>Payment</h2>
-          <div class="form-grid payment-grid">
-            <label>Currency
-              <select id="saleCurrency" onchange="updateReceiptTotals()">
-                <option value="USD" selected>USD</option>
-                <option value="ZWG">ZWG</option>
-              </select>
-            </label>
-            <label>Payment Method
-              <select id="paymentMethod" onchange="onPaymentMethodChange()">
-                <option value="CASH" selected>CASH</option>
-                <option value="POS (SWIPE)">POS (SWIPE)</option>
-                <option value="ECOCASH">ECOCASH</option>
-              </select>
-            </label>
-            <label>Amount Received
-              <input id="amountReceived" type="number" min="0" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()"/>
-            </label>
-          </div>
-
-          <div class="metrics payment-metrics">
-            <div class="metric">Total Cost<strong id="paymentTotal">$0.00</strong></div>
-            <div class="metric">Amount Received<strong id="paymentAmountReceived">$0.00</strong></div>
-            <div class="metric">Change<strong id="paymentChange">$0.00</strong></div>
-          </div>
-
-          <button onclick="recordSale()">Record Sale</button>
-          <button class="danger" onclick="clearReceipt()">Clear Receipt</button>
-        </div>
-
-        <div class="card">
-          <h2>Recent Sales</h2>
-          <table><thead><tr><th>Date</th><th>Receipt</th><th>Products</th><th>Qty</th><th>Currency</th><th>Payment</th><th>Total</th><th>Gross Profit</th></tr></thead><tbody id="salesTable"></tbody></table>
         </div>
       </section>
 
-      <section id="stockPanel" class="panel supervisor-only">
-        <div class="page-title"><h1>Add / Receive Stock</h1><p>This page is only for adding new stock.</p></div>
+      <section id="stockPanel" class="panel">
+        <div class="page-title">
+          <h1>Add / Receive Stock</h1>
+          <p>This page is only for adding new stock.</p>
+        </div>
         <div class="card">
-          <label>Product Name<input id="productName" placeholder="Product name"/></label>
-          <label>Cost Price ($)<input id="costPrice" type="number" min="0" step="0.01"/></label>
-          <label>Selling Price ($)<input id="sellingPrice" type="number" min="0" step="0.01"/></label>
-          <label>Quantity Received<input id="quantity" type="number" min="1"/></label>
-          <label>Low Stock Alert Level<input id="alertLevel" type="number" min="1" value="5"/></label>
+          <label>Product Name
+            <input id="productName" list="productNameList" oninput="onProductNameInput()" placeholder="Start typing or choose previous product" />
+            <datalist id="productNameList"></datalist>
+          </label>
+          <label>Cost Price ($)
+            <input id="costPrice" type="number" step="0.001" />
+          </label>
+          <label>Selling Price ($)
+            <input id="sellingPrice" type="number" step="0.01" />
+          </label>
+          <label>Quantity Received
+            <input id="quantity" type="number" min="1" step="1" />
+          </label>
+          <label>Low Stock Alert Level
+            <input id="alertLevel" type="number" min="0" step="1" value="5" />
+          </label>
           <button onclick="receiveStock()">Add / Receive Stock</button>
           <div id="stockMessage"></div>
         </div>
       </section>
 
-      <section id="deductPanel" class="panel supervisor-only">
-        <div class="page-title"><h1>Deduct Stock</h1><p>This page is only for stock deductions.</p></div>
+      <section id="deductPanel" class="panel">
+        <div class="page-title">
+          <h1>Deduct Stock</h1>
+          <p>Use for damaged items, expired items, or manual stock removals.</p>
+        </div>
         <div class="card">
-          <label>Product<select id="deductProduct"></select></label>
-          <label>Quantity to Deduct<input id="deductQuantity" type="number" min="1"/></label>
-          <label>Reason<input id="deductReason" placeholder="Damaged / expired / missing"/></label>
-          <button class="danger" onclick="deductStock()">Deduct Stock</button>
+          <label>Product
+            <select id="deductProduct"></select>
+          </label>
+          <label>Quantity to Deduct
+            <input id="deductQuantity" type="number" min="1" step="1" />
+          </label>
+          <label>Reason
+            <input id="deductReason" type="text" placeholder="Damaged / expired / adjustment" />
+          </label>
+          <button onclick="deductStock()">Deduct Stock</button>
         </div>
       </section>
 
-      <section id="stockTakePanel" class="panel supervisor-only">
-        <div class="page-title"><h1>Stock Take</h1><p>This page is only for stock take adjustments.</p></div>
+      <section id="stockTakePanel" class="panel">
+        <div class="page-title">
+          <h1>Stock Take</h1>
+          <p>Update system stock to match the physical count.</p>
+        </div>
         <div class="card">
-          <label>Product<select id="stockTakeProduct"></select></label>
-          <label>Actual Counted Quantity<input id="stockTakeQuantity" type="number" min="0"/></label>
-          <button onclick="stockTake()">Submit Stock Take</button>
+          <label>Product
+            <select id="stockTakeProduct"></select>
+          </label>
+          <label>Actual Quantity Counted
+            <input id="stockTakeQuantity" type="number" min="0" step="1" />
+          </label>
+          <button onclick="stockTake()">Save Stock Take</button>
         </div>
       </section>
 
-      <section id="reportsPanel" class="panel supervisor-only">
-        <div class="page-title"><h1>Reports</h1><p>View daily, weekly, and monthly reports.</p></div>
+      <section id="reportsPanel" class="panel">
+        <div class="page-title">
+          <h1>Reports</h1>
+          <p>Sales reports and daily cashup summaries.</p>
+        </div>
         <div class="card">
-          <button onclick="showReport('daily')">Daily</button>
-          <button onclick="showReport('weekly')">Weekly</button>
-          <button onclick="showReport('monthly')">Monthly</button>
+          <h2>Sales Performance</h2>
+          <button onclick="showReport('daily')">Daily Report</button>
+          <button onclick="showReport('weekly')">Weekly Report</button>
+          <button onclick="showReport('monthly')">Monthly Report</button>
           <div id="report"></div>
         </div>
+
+        <div class="card cashup-card">
+          <h2>Cashup Summary Report</h2>
+          <label>Currency
+            <select id="cashupCurrency" onchange="refreshCashupReports()">
+              <option value="USD" selected>USD</option>
+              <option value="ZAR">ZAR</option>
+              <option value="ZWG">ZWG</option>
+            </select>
+          </label>
+
+          <h3>Cashier Cashup</h3>
+          <div class="metrics compact-cashup-metrics">
+            <div class="metric compact-metric">Cash<strong id="cashierCashTotal">$0.00</strong></div>
+            <div class="metric compact-metric">POS / Swipe<strong id="cashierPosTotal">$0.00</strong></div>
+            <div class="metric compact-metric">EcoCash<strong id="cashierEcocashTotal">$0.00</strong></div>
+            <div class="metric compact-metric">Total<strong id="cashierGrandTotal">$0.00</strong></div>
+          </div>
+          <p id="cashierCashupStatus" class="muted"></p>
+          <div class="form-grid cashup-input-grid">
+            <label>Actual Cash Amount
+              <input id="actualCashAmount" type="number" min="0" step="0.01" />
+            </label>
+            <label>Actual POS / Swipe Amount
+              <input id="actualPosAmount" type="number" min="0" step="0.01" />
+            </label>
+            <label>Actual EcoCash Amount
+              <input id="actualEcocashAmount" type="number" min="0" step="0.01" />
+            </label>
+          </div>
+          <button onclick="recordCashup()">Record Cashup</button>
+          <div id="cashupMessage"></div>
+
+          <div class="supervisor-only supervisor-cashup-section">
+            <h3>Supervisor Cashup Control</h3>
+            <p class="muted">Recorded cashups can be concluded one by one or all at once. Concluded cashups disappear from this pending list until new transactions are made.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Cashier</th><th>Status</th><th>Cash</th><th>POS</th><th>EcoCash</th><th>Total</th><th>Difference</th><th>Action</th></tr>
+                </thead>
+                <tbody id="supervisorCashupTable"></tbody>
+              </table>
+            </div>
+            <button onclick="concludeAllCashups()">Conclude All Recorded Cashups</button>
+            <div id="supervisorCashupMessage"></div>
+          </div>
+        </div>
       </section>
 
-
-      <section id="pastelPanel" class="panel supervisor-only">
+      <section id="pastelPanel" class="panel">
         <div class="page-title">
-          <h1>Sage Pastel Auto Sync</h1>
-          <p>New sales and stock movements are queued automatically for the local Pastel connector. CSV export remains available as a fallback.</p>
+          <h1>Pastel Auto Sync</h1>
+          <p>Sales and stock movements are queued for Sage 50cloud Pastel.</p>
         </div>
-
         <div class="card pastel-card">
-          <h2>Real-Time Sync Queue</h2>
-          <p class="muted">Keep the <strong>pastel-connector</strong> service running on the computer/server where Sage Pastel is installed. Every new POS sale is queued here and the connector posts it to Pastel automatically.</p>
+          <h2>Pastel Sync Status</h2>
           <div class="metrics">
-            <div class="metric">Queue Table<strong id="pastelQueueAvailable">Checking</strong></div>
+            <div class="metric">Queue<strong id="pastelQueueAvailable">Installed</strong></div>
             <div class="metric">Pending<strong id="pastelPendingCount">0</strong></div>
             <div class="metric">Synced<strong id="pastelSyncedCount">0</strong></div>
             <div class="metric">Failed<strong id="pastelFailedCount">0</strong></div>
           </div>
-          <button onclick="refreshPastelSyncStatus()">Refresh Sync Status</button>
+          <button onclick="refreshPastelSyncStatus()">Refresh Status</button>
           <div id="pastelSyncMessage"></div>
           <table>
-            <thead><tr><th>Queued</th><th>Type</th><th>Reference</th><th>Status</th><th>Attempts</th><th>Action / Error</th></tr></thead>
+            <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Status</th><th>Attempts</th><th>Action / Error</th></tr></thead>
             <tbody id="pastelSyncTable"></tbody>
           </table>
         </div>
-
         <div class="card pastel-card">
-          <h2>Export Period</h2>
-          <p class="muted">Choose the period you want to send to Pastel. For best results, export once per day after closing cash-up.</p>
+          <h2>Manual Pastel CSV Export</h2>
           <div class="form-grid">
-            <label>From Date
-              <input id="pastelFromDate" type="date"/>
-            </label>
-            <label>To Date
-              <input id="pastelToDate" type="date"/>
-            </label>
-            <label>Customer / Account Code
-              <input id="pastelCustomerCode" value="CASH001" placeholder="CASH001"/>
-            </label>
-            <label>Sales Account
-              <input id="pastelSalesAccount" value="4000/000" placeholder="4000/000"/>
-            </label>
-            <label>VAT / Tax Code
-              <input id="pastelTaxCode" value="0" placeholder="0"/>
-            </label>
-            <label>Document Prefix
-              <input id="pastelDocPrefix" value="MIL" placeholder="MIL"/>
-            </label>
+            <label>From Date<input id="pastelFromDate" type="date" /></label>
+            <label>To Date<input id="pastelToDate" type="date" /></label>
+            <label>Customer Code<input id="pastelCustomerCode" type="text" value="CASH001" /></label>
+            <label>Sales Account<input id="pastelSalesAccount" type="text" value="4000/000" /></label>
+            <label>Tax Code<input id="pastelTaxCode" type="text" value="0" /></label>
+            <label>Document Prefix<input id="pastelDocPrefix" type="text" value="MIL" /></label>
           </div>
-          <div id="pastelMessage"></div>
-        </div>
-
-        <div class="card">
-          <h2>Pastel CSV Exports</h2>
+          <div class="metrics">
+            <div class="metric">Sales Lines<strong id="pastelSalesCount">0</strong></div>
+            <div class="metric">Revenue<strong id="pastelRevenue">$0.00</strong></div>
+            <div class="metric">Products<strong id="pastelProductCount">0</strong></div>
+            <div class="metric">Movements<strong id="pastelMovementCount">0</strong></div>
+          </div>
           <button onclick="exportPastelSalesInvoices()">Export Sales Invoices CSV</button>
           <button onclick="exportPastelDailyJournal()">Export Daily Journal CSV</button>
-          <button onclick="exportPastelProducts()">Export Inventory Items CSV</button>
+          <button onclick="exportPastelProducts()">Export Products CSV</button>
           <button onclick="exportPastelStockMovements()">Export Stock Movements CSV</button>
-          <button onclick="exportPastelBundle()">Export All Pastel Files</button>
-          <p class="muted">Use these only if the real-time connector is offline or your Pastel version only supports imports. Import in Pastel using File → Import/Export and map the CSV columns to your company fields.</p>
-        </div>
-
-        <div class="card">
-          <h2>Export Preview</h2>
-          <div class="metrics">
-            <div class="metric">Sales in Period<strong id="pastelSalesCount">0</strong></div>
-            <div class="metric">Revenue in Period<strong id="pastelRevenue">$0.00</strong></div>
-            <div class="metric">Inventory Items<strong id="pastelProductCount">0</strong></div>
-            <div class="metric">Stock Movements<strong id="pastelMovementCount">0</strong></div>
-          </div>
+          <button onclick="exportPastelBundle()">Export Full Bundle</button>
+          <div id="pastelMessage"></div>
           <table>
             <thead><tr><th>Date</th><th>Document</th><th>Customer</th><th>Product</th><th>Qty</th><th>Total</th></tr></thead>
             <tbody id="pastelPreviewTable"></tbody>
@@ -261,27 +326,75 @@
         </div>
       </section>
 
-      <section id="movementsPanel" class="panel supervisor-only">
-        <div class="page-title"><h1>Stock Movement History</h1><p>Audit history of stock activity.</p></div>
+      <section id="movementsPanel" class="panel">
+        <div class="page-title">
+          <h1>Stock Movements</h1>
+          <p>Audit trail for stock received, deducted, sold, and stock take adjustments.</p>
+        </div>
         <div class="card">
-          <table><thead><tr><th>Date</th><th>Type</th><th>Product</th><th>Qty Change</th><th>Reason</th></tr></thead><tbody id="movementTable"></tbody></table>
+          <table>
+            <thead><tr><th>Date</th><th>Movement</th><th>Product</th><th>Qty Change</th><th>Reason</th></tr></thead>
+            <tbody id="movementTable"></tbody>
+          </table>
         </div>
       </section>
 
-      <section id="settingsPanel" class="panel supervisor-only">
-        <div class="page-title"><h1>Settings</h1><p>Set rent for profit calculations.</p></div>
+      <section id="settingsPanel" class="panel">
+        <div class="page-title">
+          <h1>Settings</h1>
+          <p>Supervisor-only product price and exchange-rate controls.</p>
+        </div>
         <div class="card">
-          <label>Monthly Rent ($)<input id="monthlyRent" type="number" min="0" step="0.01"/></label>
-          <button onclick="saveSettings()">Save Rent</button>
+          <h2>Change Product Price</h2>
+          <p class="muted">Changing product prices requires supervisor password confirmation.</p>
+          <label>Product
+            <select id="priceProduct" onchange="onPriceProductChange()"></select>
+          </label>
+          <div class="form-grid">
+            <label>New Cost Price ($)
+              <input id="newCostPrice" type="number" min="0" step="0.001" />
+            </label>
+            <label>New Selling Price ($)
+              <input id="newSellingPrice" type="number" min="0" step="0.01" />
+            </label>
+          </div>
+          <button onclick="changeProductPrice()">Change Product Price</button>
+          <div id="priceSettingsMessage"></div>
+        </div>
+        <div class="card">
+          <h2>Update Currency Rates</h2>
+          <p class="muted">USD remains fixed at 1. Only ZAR and ZWG can be updated.</p>
+          <div class="form-grid">
+            <label>USD Rate
+              <input id="usdRate" type="number" value="1" disabled />
+            </label>
+            <label>USD : ZAR
+              <input id="usdZarRate" type="number" min="0" step="0.0001" />
+            </label>
+            <label>USD : ZWG
+              <input id="usdZwgRate" type="number" min="0" step="0.0001" />
+            </label>
+          </div>
+          <button onclick="updateRates()">Update Rates</button>
+          <div id="rateSettingsMessage"></div>
         </div>
       </section>
 
       <section id="passwordPanel" class="panel">
-        <div class="page-title"><h1>Change Password</h1><p>Enter old password, then re-enter the new password.</p></div>
+        <div class="page-title">
+          <h1>Change Password</h1>
+          <p>Update your login password securely.</p>
+        </div>
         <div class="card">
-          <label>Old Password<input id="oldPassword" type="password" placeholder="Enter old password"/></label>
-          <label>New Password<input id="newPassword" type="password" placeholder="Enter new password"/></label>
-          <label>Re-enter New Password<input id="confirmNewPassword" type="password" placeholder="Re-enter new password"/></label>
+          <label>Old Password
+            <input id="oldPassword" type="password" autocomplete="current-password" />
+          </label>
+          <label>New Password
+            <input id="newPassword" type="password" autocomplete="new-password" />
+          </label>
+          <label>Confirm New Password
+            <input id="confirmNewPassword" type="password" autocomplete="new-password" />
+          </label>
           <button onclick="changePassword()">Change Password</button>
           <div id="passwordMessage"></div>
         </div>
@@ -289,6 +402,7 @@
     </main>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/config.js"></script>
   <script src="assets/app.js"></script>
 </body>

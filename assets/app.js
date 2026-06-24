@@ -1295,3 +1295,641 @@ async function init() {
 }
 
 init();
+
+/* =========================
+   2026-06 Cashup, Rates, Compact Sales UI Update
+   ========================= */
+let cashierCashupSummary = null;
+let supervisorCashupSummary = null;
+let lastReportPeriod = null;
+
+function currencyPrefix(currency) {
+  const c = String(currency || "USD").toUpperCase();
+  if (c === "ZWG") return "ZWG ";
+  if (c === "ZAR") return "R";
+  return "$";
+}
+
+function formatCurrency(value, currency = "USD") {
+  return currencyPrefix(currency) + Number(value || 0).toFixed(2);
+}
+
+function currencySymbol() {
+  return currencyPrefix(document.getElementById("saleCurrency")?.value || "USD");
+}
+
+function moneyForSale(value) {
+  return formatCurrency(value, document.getElementById("saleCurrency")?.value || "USD");
+}
+
+function safeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function todayKey(date = new Date()) {
+  return ymd(date);
+}
+
+function todaySalesOnly(list = sales) {
+  const today = new Date().toDateString();
+  return list.filter(s => new Date(s.created_at).toDateString() === today);
+}
+
+async function loadSettings() {
+  settings = { usd_rate: 1, usd_zar: 1, usd_zwg: 1 };
+
+  const { data, error } = await supabaseClient
+    .from("settings")
+    .select("*")
+    .in("setting_key", ["currency_usd", "currency_usd_zar", "currency_usd_zwg"]);
+
+  if (error) {
+    console.warn("Could not load settings:", error.message);
+    return;
+  }
+
+  (data || []).forEach(row => {
+    if (row.setting_key === "currency_usd") settings.usd_rate = Number(row.setting_value || 1);
+    if (row.setting_key === "currency_usd_zar") settings.usd_zar = Number(row.setting_value || 1);
+    if (row.setting_key === "currency_usd_zwg") settings.usd_zwg = Number(row.setting_value || 1);
+  });
+
+  if (!settings.usd_rate) settings.usd_rate = 1;
+}
+
+async function loadSales() {
+  const { data, error } = await supabaseClient
+    .from("sales")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (!error) sales = data || [];
+}
+
+function onProductNameInput() {
+  const name = document.getElementById("productName")?.value.trim().toLowerCase();
+  if (!name) return;
+  const product = products.find(p => String(p.name || "").trim().toLowerCase() === name);
+  if (!product) return;
+
+  const cost = document.getElementById("costPrice");
+  const selling = document.getElementById("sellingPrice");
+  const alert = document.getElementById("alertLevel");
+  if (cost) cost.value = Number(product.cost_price || 0).toFixed(2);
+  if (selling) selling.value = Number(product.selling_price || 0).toFixed(2);
+  if (alert) alert.value = Number(product.alert_level || 5);
+}
+
+function onPriceProductChange() {
+  const product = getProductById(document.getElementById("priceProduct")?.value);
+  if (!product) return;
+  const cost = document.getElementById("newCostPrice");
+  const selling = document.getElementById("newSellingPrice");
+  if (cost) cost.value = Number(product.cost_price || 0).toFixed(2);
+  if (selling) selling.value = Number(product.selling_price || 0).toFixed(2);
+}
+
+async function requireSupervisorPassword(messageId = "settingsMessage") {
+  if (!isSupervisor()) {
+    showMessage(messageId, "Only a supervisor can make this change.", "error");
+    return false;
+  }
+
+  const password = window.prompt("Supervisor confirmation required. Enter your supervisor password:");
+  if (!password) {
+    showMessage(messageId, "Supervisor confirmation cancelled.", "error");
+    return false;
+  }
+
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email: currentUser.email,
+    password
+  });
+
+  if (error) {
+    showMessage(messageId, "Supervisor password is incorrect.", "error");
+    return false;
+  }
+
+  return true;
+}
+
+async function changeProductPrice() {
+  if (!(await requireSupervisorPassword("priceSettingsMessage"))) return;
+
+  const productId = document.getElementById("priceProduct")?.value;
+  const cost = safeNumber(document.getElementById("newCostPrice")?.value, -1);
+  const selling = safeNumber(document.getElementById("newSellingPrice")?.value, -1);
+
+  if (!productId || cost < 0 || selling < 0) {
+    showMessage("priceSettingsMessage", "Select product and enter valid cost and selling prices.", "error");
+    return;
+  }
+
+  const { error } = await supabaseClient.rpc("update_product_price_rpc", {
+    p_product_id: productId,
+    p_cost_price: cost,
+    p_selling_price: selling
+  });
+
+  if (error) {
+    showMessage("priceSettingsMessage", error.message, "error");
+    return;
+  }
+
+  await loadAll();
+  render();
+  showMessage("priceSettingsMessage", "Product price updated successfully.");
+}
+
+async function updateRates() {
+  if (!(await requireSupervisorPassword("rateSettingsMessage"))) return;
+
+  const zar = safeNumber(document.getElementById("usdZarRate")?.value, 0);
+  const zwg = safeNumber(document.getElementById("usdZwgRate")?.value, 0);
+
+  if (zar <= 0 || zwg <= 0) {
+    showMessage("rateSettingsMessage", "Enter valid USD:ZAR and USD:ZWG rates.", "error");
+    return;
+  }
+
+  const { error } = await supabaseClient.rpc("upsert_currency_rates_rpc", {
+    p_usd_zar: zar,
+    p_usd_zwg: zwg
+  });
+
+  if (error) {
+    showMessage("rateSettingsMessage", error.message, "error");
+    return;
+  }
+
+  settings.usd_rate = 1;
+  settings.usd_zar = zar;
+  settings.usd_zwg = zwg;
+  showMessage("rateSettingsMessage", "Exchange rates updated successfully.");
+}
+
+function calculateReport(period) {
+  const periodSales = getPeriodSales(period);
+  const revenue = periodSales.reduce((sum, s) => sum + Number(s.revenue || 0), 0);
+  const productCost = periodSales.reduce((sum, s) => sum + Number(s.product_cost || 0), 0);
+  const grossProfit = periodSales.reduce((sum, s) => sum + Number(s.gross_profit || 0), 0);
+  const netProfit = grossProfit;
+
+  const productTotals = {};
+  periodSales.forEach(s => {
+    productTotals[s.product_name] = (productTotals[s.product_name] || 0) + Number(s.quantity || 0);
+  });
+
+  let topProduct = "No sales yet";
+  let highestQty = 0;
+  Object.entries(productTotals).forEach(([name, qty]) => {
+    if (qty > highestQty) {
+      highestQty = qty;
+      topProduct = `${name} (${qty} sold)`;
+    }
+  });
+
+  const averageProfitPerDay =
+    period === "daily" ? netProfit :
+    period === "weekly" ? netProfit / 7 :
+    netProfit / 30;
+
+  return { revenue, productCost, grossProfit, netProfit, averageProfitPerDay, topProduct, numberOfSales: periodSales.length };
+}
+
+function showReport(period) {
+  lastReportPeriod = period;
+  const report = calculateReport(period);
+
+  document.getElementById("report").innerHTML = `
+    <h3>${period.charAt(0).toUpperCase() + period.slice(1)} Report</h3>
+    <div class="metrics report-metrics">
+      <div class="metric">Sales Revenue<strong>${money(report.revenue)}</strong></div>
+      <div class="metric">Product Cost<strong>${money(report.productCost)}</strong></div>
+      <div class="metric">Gross Profit<strong>${money(report.grossProfit)}</strong></div>
+      <div class="metric">Net Profit<strong>${money(report.netProfit)}</strong></div>
+      <div class="metric">Average Profit / Day<strong>${money(report.averageProfitPerDay)}</strong></div>
+      <div class="metric">Most Sought Product<strong>${report.topProduct}</strong></div>
+      <div class="metric">Number of Sales<strong>${report.numberOfSales}</strong></div>
+    </div>
+  `;
+}
+
+function cashupCurrency() {
+  return document.getElementById("cashupCurrency")?.value || "USD";
+}
+
+function cashupMethodTotalsFromSummary(summary) {
+  return {
+    cash: Number(summary?.cash || 0),
+    pos: Number(summary?.pos || 0),
+    ecocash: Number(summary?.ecocash || 0),
+    total: Number(summary?.total || 0)
+  };
+}
+
+async function loadCashierCashupSummary() {
+  const currency = cashupCurrency();
+  const { data, error } = await supabaseClient.rpc("cashier_cashup_summary_rpc", {
+    p_currency: currency
+  });
+
+  if (error) {
+    cashierCashupSummary = null;
+    showMessage("cashupMessage", error.message, "error");
+    return;
+  }
+
+  cashierCashupSummary = data || {};
+}
+
+async function loadSupervisorCashupSummary() {
+  if (!isSupervisor()) return;
+  const currency = cashupCurrency();
+  const { data, error } = await supabaseClient.rpc("supervisor_cashup_summary_rpc", {
+    p_currency: currency
+  });
+
+  if (error) {
+    supervisorCashupSummary = null;
+    showMessage("supervisorCashupMessage", error.message, "error");
+    return;
+  }
+
+  supervisorCashupSummary = data || {};
+}
+
+function renderCashierCashupSummary() {
+  const currency = cashupCurrency();
+  const totals = cashupMethodTotalsFromSummary(cashierCashupSummary);
+  const ids = {
+    cashierCashTotal: totals.cash,
+    cashierPosTotal: totals.pos,
+    cashierEcocashTotal: totals.ecocash,
+    cashierGrandTotal: totals.total
+  };
+
+  Object.entries(ids).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = formatCurrency(value, currency);
+  });
+
+  const status = document.getElementById("cashierCashupStatus");
+  if (status) {
+    status.textContent = totals.total > 0
+      ? "Pending cashup for today's unconcluded transactions."
+      : "No pending transactions for this currency.";
+  }
+}
+
+function renderSupervisorCashupSummary() {
+  const table = document.getElementById("supervisorCashupTable");
+  if (!table || !isSupervisor()) return;
+
+  const currency = cashupCurrency();
+  const recorded = supervisorCashupSummary?.recorded_cashups || [];
+  const pending = supervisorCashupSummary?.pending_cashiers || [];
+  table.innerHTML = "";
+
+  recorded.forEach(row => {
+    table.innerHTML += `
+      <tr>
+        <td>${row.cashier_name || row.cashier_id || "Cashier"}</td>
+        <td>Recorded</td>
+        <td>${formatCurrency(row.system_cash || 0, currency)}</td>
+        <td>${formatCurrency(row.system_pos || 0, currency)}</td>
+        <td>${formatCurrency(row.system_ecocash || 0, currency)}</td>
+        <td>${formatCurrency(row.total_amount || 0, currency)}</td>
+        <td>${formatCurrency(row.difference || 0, currency)}</td>
+        <td><button class="small-btn" onclick="concludeCashup('${row.id}')">Conclude</button></td>
+      </tr>
+    `;
+  });
+
+  pending.forEach(row => {
+    table.innerHTML += `
+      <tr>
+        <td>${row.cashier_name || row.cashier_id || "Cashier"}</td>
+        <td>Waiting for cashier cashup</td>
+        <td>${formatCurrency(row.cash || 0, currency)}</td>
+        <td>${formatCurrency(row.pos || 0, currency)}</td>
+        <td>${formatCurrency(row.ecocash || 0, currency)}</td>
+        <td>${formatCurrency(row.total || 0, currency)}</td>
+        <td class="muted">—</td>
+        <td class="muted">Not recorded yet</td>
+      </tr>
+    `;
+  });
+
+  if (!table.innerHTML) {
+    table.innerHTML = `<tr><td colspan="8">No pending or recorded cashups for ${currency}. Once concluded, cashups disappear until new sales are made.</td></tr>`;
+  }
+}
+
+async function refreshCashupReports() {
+  await loadCashierCashupSummary();
+  if (isSupervisor()) await loadSupervisorCashupSummary();
+  renderCashierCashupSummary();
+  renderSupervisorCashupSummary();
+}
+
+async function recordCashup() {
+  const currency = cashupCurrency();
+  const cash = safeNumber(document.getElementById("actualCashAmount")?.value, 0);
+  const pos = safeNumber(document.getElementById("actualPosAmount")?.value, 0);
+  const ecocash = safeNumber(document.getElementById("actualEcocashAmount")?.value, 0);
+
+  const { data, error } = await supabaseClient.rpc("record_cashup_rpc", {
+    p_currency: currency,
+    p_cash_amount: cash,
+    p_pos_amount: pos,
+    p_ecocash_amount: ecocash
+  });
+
+  if (error) {
+    showMessage("cashupMessage", error.message, "error");
+    return;
+  }
+
+  document.getElementById("actualCashAmount").value = "";
+  document.getElementById("actualPosAmount").value = "";
+  document.getElementById("actualEcocashAmount").value = "";
+  showMessage("cashupMessage", `Cashup recorded successfully for ${currency}. Supervisor can now conclude it.`);
+  await loadAll();
+  await refreshCashupReports();
+}
+
+async function concludeCashup(cashupId) {
+  if (!isSupervisor()) return;
+  const { error } = await supabaseClient.rpc("conclude_cashup_rpc", {
+    p_cashup_id: cashupId
+  });
+
+  if (error) {
+    showMessage("supervisorCashupMessage", error.message, "error");
+    return;
+  }
+
+  showMessage("supervisorCashupMessage", "Cashup concluded.");
+  await refreshCashupReports();
+}
+
+async function concludeAllCashups() {
+  if (!isSupervisor()) return;
+  const { error } = await supabaseClient.rpc("conclude_all_cashups_rpc", {
+    p_currency: cashupCurrency()
+  });
+
+  if (error) {
+    showMessage("supervisorCashupMessage", error.message, "error");
+    return;
+  }
+
+  showMessage("supervisorCashupMessage", "All recorded cashups for this currency have been concluded.");
+  await refreshCashupReports();
+}
+
+async function recordSale() {
+  if (!validatePayment()) return;
+
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const paymentMethod = document.getElementById("paymentMethod")?.value || "CASH";
+  const amountReceived = Number(document.getElementById("amountReceived")?.value || 0);
+
+  const { data, error } = await supabaseClient.rpc("record_invoice_sale_rpc", {
+    p_items: receiptItems.map(item => ({ product_id: item.product_id, quantity: item.quantity })),
+    p_currency: currency,
+    p_payment_method: paymentMethod,
+    p_amount_received: amountReceived
+  });
+
+  if (error) {
+    showMessage("saleMessage", error.message, "error");
+    return;
+  }
+
+  const result = data || {};
+  const total = receiptTotal();
+  const change = paymentMethod === "CASH" && amountReceived > total ? amountReceived - total : 0;
+  receiptItems = [];
+  document.getElementById("amountReceived").value = "";
+  renderReceipt();
+  await loadAll();
+
+  const saleId = result.sale_id || result.invoice_id || result.id;
+  const recordedSale = sales.find(s => String(s.id) === String(saleId)) || sales[0];
+  if (recordedSale) {
+    await enqueuePastelSync("sale_invoice", "sales", recordedSale.id || `${recordedSale.created_at}-${recordedSale.product_id}`, buildPastelSalePayload(recordedSale));
+    await loadPastelSyncJobs();
+  }
+
+  showMessage("saleMessage", `Sale recorded successfully. ${change > 0 ? `Change: ${currencyPrefix(currency)}${change.toFixed(2)}.` : ""} Queued for ZIMRA and Pastel sync.`);
+  render();
+  await refreshCashupReports();
+}
+
+function fillDropdowns() {
+  const ids = ["saleProduct", "deductProduct", "stockTakeProduct", "priceProduct"];
+
+  ids.forEach(id => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    select.innerHTML = "";
+
+    if (id === "priceProduct") {
+      select.innerHTML = `<option value="">Select product</option>`;
+    }
+
+    products.forEach(p => {
+      const disabled = (id !== "priceProduct" && Number(p.quantity || 0) <= 0) ? "disabled" : "";
+      select.innerHTML += `<option value="${p.id}" ${disabled}>${p.name} — ${p.quantity} left — ${money(p.selling_price)}</option>`;
+    });
+  });
+
+  const dataList = document.getElementById("productNameList");
+  if (dataList) {
+    dataList.innerHTML = "";
+    products.forEach(p => {
+      dataList.innerHTML += `<option value="${p.name}"></option>`;
+    });
+  }
+
+  if (document.getElementById("saleProduct")) onSaleProductChange();
+  if (document.getElementById("priceProduct")) onPriceProductChange();
+  renderReceipt();
+}
+
+function render() {
+  if (!currentUser || !currentProfile) return;
+
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+
+  document.getElementById("userInfo").textContent = `${currentProfile.full_name} — ${currentProfile.role}`;
+
+  document.querySelectorAll(".supervisor-only").forEach(el => {
+    el.classList.toggle("hidden", !isSupervisor());
+  });
+
+  fillDropdowns();
+
+  const productCount = document.getElementById("productCount");
+  if (productCount) productCount.textContent = products.length;
+
+  const usdRate = document.getElementById("usdRate");
+  const zarRate = document.getElementById("usdZarRate");
+  const zwgRate = document.getElementById("usdZwgRate");
+  if (usdRate) usdRate.value = "1";
+  if (zarRate) zarRate.value = Number(settings.usd_zar || 1);
+  if (zwgRate) zwgRate.value = Number(settings.usd_zwg || 1);
+
+  const today = calculateReport("daily");
+  const todaySalesEl = document.getElementById("todaySales");
+  const todayProfitEl = document.getElementById("todayProfit");
+  const topProductEl = document.getElementById("topProduct");
+  if (todaySalesEl) todaySalesEl.textContent = money(today.revenue);
+  if (todayProfitEl) todayProfitEl.textContent = money(today.netProfit);
+  if (topProductEl) topProductEl.textContent = today.topProduct;
+
+  const alerts = document.getElementById("alerts");
+  if (alerts) {
+    alerts.innerHTML = "";
+    products.forEach(p => {
+      if (Number(p.quantity) <= Number(p.alert_level)) {
+        alerts.innerHTML += `<div class="alert">${p.name} has only ${p.quantity} left. Restock soon.</div>`;
+      }
+    });
+    if (!alerts.innerHTML) alerts.innerHTML = `<div class="good">All products have enough stock.</div>`;
+  }
+
+  const stockTable = document.getElementById("stockTable");
+  if (stockTable) {
+    stockTable.innerHTML = "";
+    products.forEach(p => {
+      stockTable.innerHTML += `
+        <tr>
+          <td>${p.name}</td>
+          <td>${money(p.cost_price)}</td>
+          <td>${money(p.selling_price)}</td>
+          <td>${p.quantity}</td>
+          <td>${p.alert_level}</td>
+        </tr>
+      `;
+    });
+  }
+
+  const salesTable = document.getElementById("salesTable");
+  if (salesTable) {
+    salesTable.innerHTML = "";
+    sales.slice(0, 50).forEach(s => {
+      const currency = s.currency || "USD";
+      salesTable.innerHTML += `
+        <tr>
+          <td>${new Date(s.created_at).toLocaleString()}</td>
+          <td>${s.receipt_number || s.invoice_number || ""}</td>
+          <td>${s.product_name || "Sale"}</td>
+          <td>${s.quantity || ""}</td>
+          <td>${currency}</td>
+          <td>${s.payment_method || ""}</td>
+          <td>${formatCurrency(s.revenue || 0, currency)}</td>
+          <td>${formatCurrency(s.gross_profit || 0, currency)}</td>
+        </tr>
+      `;
+    });
+  }
+
+  const movementTable = document.getElementById("movementTable");
+  if (movementTable) {
+    movementTable.innerHTML = "";
+    movements.slice(0, 50).forEach(m => {
+      movementTable.innerHTML += `
+        <tr>
+          <td>${new Date(m.created_at).toLocaleString()}</td>
+          <td>${m.movement_type}</td>
+          <td>${m.product_name}</td>
+          <td>${m.quantity_change}</td>
+          <td>${m.reason || ""}</td>
+        </tr>
+      `;
+    });
+  }
+
+  renderReceipt();
+  renderPastelSyncStatus();
+  updatePastelPreview();
+  if (lastReportPeriod) showReport(lastReportPeriod);
+  refreshCashupReports().catch(err => console.warn("cashup refresh failed", err));
+}
+
+function onSaleCurrencyChange() {
+  updateReceiptTotals();
+  onPaymentMethodChange();
+}
+
+/* Currency conversion override: products are priced in USD, ZAR/ZWG totals use supervisor rates. */
+function selectedCurrencyRate(currency = document.getElementById("saleCurrency")?.value || "USD") {
+  const c = String(currency || "USD").toUpperCase();
+  if (c === "ZAR") return Number(settings.usd_zar || 1);
+  if (c === "ZWG") return Number(settings.usd_zwg || 1);
+  return 1;
+}
+
+function receiptTotal() {
+  const baseUsd = receiptItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+  return Number((baseUsd * selectedCurrencyRate()).toFixed(2));
+}
+
+function moneyForSale(value) {
+  return formatCurrency(value, document.getElementById("saleCurrency")?.value || "USD");
+}
+
+function renderReceipt() {
+  const table = document.getElementById("receiptItemsTable");
+  if (!table) return;
+
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const rate = selectedCurrencyRate(currency);
+  table.innerHTML = "";
+
+  receiptItems.forEach(item => {
+    table.innerHTML += `
+      <tr>
+        <td>${item.product_name}</td>
+        <td>${item.quantity}</td>
+        <td>${formatCurrency(Number(item.unit_price || 0) * rate, currency)}</td>
+        <td>${formatCurrency(Number(item.line_total || 0) * rate, currency)}</td>
+        <td><button class="danger small-btn" onclick="removeReceiptItem('${item.product_id}')">Remove</button></td>
+      </tr>
+    `;
+  });
+
+  if (!table.innerHTML) {
+    table.innerHTML = `<tr><td colspan="5">No products added yet. Select a product above and press Enter or Add.</td></tr>`;
+  }
+
+  updateReceiptTotals();
+}
+
+function updateReceiptTotals() {
+  const total = receiptTotal();
+  const itemCount = receiptItemCount();
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+
+  const grandTotal = document.getElementById("receiptGrandTotal");
+  const receiptCount = document.getElementById("receiptItemCount");
+  const paymentTotal = document.getElementById("paymentTotal");
+
+  if (grandTotal) grandTotal.textContent = formatCurrency(total, currency);
+  if (receiptCount) receiptCount.textContent = itemCount;
+  if (paymentTotal) paymentTotal.textContent = formatCurrency(total, currency);
+
+  updatePaymentPreview();
+}
+
+function onSaleCurrencyChange() {
+  renderReceipt();
+  onPaymentMethodChange();
+}

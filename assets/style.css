@@ -404,3 +404,184 @@ th {
     margin-bottom: 0;
   }
 }
+
+/* =========================
+   Compact sales + cashup update
+   ========================= */
+.content {
+  max-width: none;
+  width: 100%;
+}
+
+.compact-title {
+  padding: 12px 18px;
+  margin-bottom: 10px;
+}
+
+.compact-title h1 {
+  font-size: 28px;
+}
+
+.compact-title p {
+  margin-top: 3px;
+}
+
+#salesPanel .card,
+.compact-card {
+  padding: 13px 16px;
+  margin-bottom: 10px;
+}
+
+#salesPanel h2 {
+  margin: 0 0 10px;
+  font-size: 23px;
+}
+
+#salesPanel label {
+  margin: 4px 0;
+}
+
+#salesPanel input,
+#salesPanel select {
+  padding: 9px 10px;
+  margin-top: 4px;
+}
+
+.sale-entry-card {
+  min-height: auto;
+}
+
+.compact-sale-row {
+  grid-template-columns: minmax(380px, 1fr) 150px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.compact-sale-row .add-line-btn {
+  min-height: 40px;
+  margin: 0 0 4px 0;
+  white-space: nowrap;
+}
+
+.compact-hint {
+  margin: 6px 0 0;
+}
+
+.sale-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.receipt-card,
+.payment-card {
+  min-height: 0;
+}
+
+.receipt-table-wrap,
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.receipt-table-wrap {
+  max-height: 245px;
+  overflow-y: auto;
+}
+
+.receipt-table-wrap th,
+.receipt-table-wrap td {
+  padding: 7px 9px;
+}
+
+.compact-summary {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 9px;
+}
+
+.compact-metric {
+  padding: 11px 12px;
+}
+
+.compact-metric strong {
+  font-size: 20px;
+  margin-top: 4px;
+}
+
+.payment-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.compact-payment-metrics {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.recent-sales-card {
+  margin-top: 2px;
+}
+
+.recent-sales-card table th,
+.recent-sales-card table td {
+  padding: 7px 8px;
+  font-size: 13px;
+}
+
+.cashup-card {
+  border-left: 5px solid #ed1c24;
+}
+
+.compact-cashup-metrics {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.cashup-input-grid {
+  margin-top: 10px;
+}
+
+.supervisor-cashup-section {
+  margin-top: 20px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 14px;
+}
+
+#supervisorCashupTable td,
+#supervisorCashupTable th {
+  padding: 8px;
+}
+
+input:disabled {
+  background: #f3f4f6;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1100px) {
+  .sale-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-sale-row {
+    grid-template-columns: 1fr 150px auto;
+  }
+}
+
+@media (max-width: 850px) {
+  .compact-sale-row,
+  .sale-workspace,
+  .compact-summary,
+  .compact-payment-metrics,
+  .compact-cashup-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-sale-row .add-line-btn {
+    margin: 0;
+  }
+}

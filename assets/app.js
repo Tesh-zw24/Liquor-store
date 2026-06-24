@@ -6,6 +6,7 @@ let movements = [];
 let settings = { monthly_rent: 0 };
 let pastelSyncJobs = [];
 let pastelSyncAvailable = true;
+let receiptItems = [];
 const PASTEL_SYNC_SOURCE = "millet-pos";
 
 function money(value) {
@@ -61,8 +62,9 @@ async function login() {
   await loadProfile();
   await loadAll();
   render();
+  renderReceipt();
+  renderPastelSyncStatus();
   updatePastelPreview();
-  openPanel("dashboardPanel");
 }
 
 async function logout() {
@@ -157,18 +159,240 @@ async function loadPastelSyncJobs() {
   pastelSyncJobs = data || [];
 }
 
-async function recordSale() {
-  const productId = document.getElementById("saleProduct").value;
-  const quantity = Number(document.getElementById("saleQuantity").value);
+function getProductById(productId) {
+  return products.find(p => String(p.id) === String(productId));
+}
 
-  if (!productId || quantity <= 0) {
-    showMessage("saleMessage", "Select product and enter valid quantity.", "error");
+function currencySymbol() {
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  return currency === "ZWG" ? "ZWG " : "$";
+}
+
+function moneyForSale(value) {
+  return currencySymbol() + Number(value || 0).toFixed(2);
+}
+
+function receiptTotal() {
+  return receiptItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+}
+
+function receiptItemCount() {
+  return receiptItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+}
+
+function onSaleProductChange() {
+  const product = getProductById(document.getElementById("saleProduct")?.value);
+  const qtyInput = document.getElementById("saleQuantity");
+  const hint = document.getElementById("saleProductHint");
+
+  if (qtyInput) qtyInput.value = "1";
+  if (qtyInput && product) qtyInput.max = Number(product.quantity || 0);
+  if (hint && product) {
+    hint.textContent = `${product.name}: ${product.quantity} available at ${money(product.selling_price)} each.`;
+  }
+}
+
+function handleSaleQuantityKey(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addProductToReceipt();
+  }
+}
+
+function addProductToReceipt() {
+  const productId = document.getElementById("saleProduct").value;
+  const quantity = Number(document.getElementById("saleQuantity").value || 1);
+  const product = getProductById(productId);
+
+  if (!product) {
+    showMessage("saleMessage", "Select a product first.", "error");
     return;
   }
 
-  const { error } = await supabaseClient.rpc("record_sale_rpc", {
-    p_product_id: productId,
-    p_quantity: quantity
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    showMessage("saleMessage", "Enter a valid quantity.", "error");
+    return;
+  }
+
+  if (!Number.isInteger(quantity)) {
+    showMessage("saleMessage", "Quantity must be a whole number.", "error");
+    return;
+  }
+
+  const existing = receiptItems.find(item => item.product_id === product.id);
+  const currentReceiptQty = existing ? Number(existing.quantity || 0) : 0;
+  const requestedTotalQty = currentReceiptQty + quantity;
+  const stockAvailable = Number(product.quantity || 0);
+
+  if (requestedTotalQty > stockAvailable) {
+    showMessage("saleMessage", `Insufficient stock. ${product.name} has only ${stockAvailable} available.`, "error");
+    return;
+  }
+
+  if (existing) {
+    existing.quantity = requestedTotalQty;
+    existing.line_total = Number((existing.quantity * existing.unit_price).toFixed(2));
+  } else {
+    receiptItems.push({
+      product_id: product.id,
+      product_name: product.name,
+      quantity,
+      unit_price: Number(product.selling_price || 0),
+      cost_price: Number(product.cost_price || 0),
+      vat_rate: Number(product.vat_rate || 15),
+      line_total: Number((quantity * Number(product.selling_price || 0)).toFixed(2))
+    });
+  }
+
+  document.getElementById("saleQuantity").value = "1";
+  showMessage("saleMessage", `${product.name} added to receipt.`);
+  renderReceipt();
+}
+
+function removeReceiptItem(productId) {
+  receiptItems = receiptItems.filter(item => String(item.product_id) !== String(productId));
+  renderReceipt();
+}
+
+function clearReceipt() {
+  receiptItems = [];
+  const amountReceived = document.getElementById("amountReceived");
+  if (amountReceived) amountReceived.value = "";
+  renderReceipt();
+  showMessage("saleMessage", "Receipt cleared.");
+}
+
+function renderReceipt() {
+  const table = document.getElementById("receiptItemsTable");
+  if (!table) return;
+
+  table.innerHTML = "";
+  receiptItems.forEach(item => {
+    table.innerHTML += `
+      <tr>
+        <td>${item.product_name}</td>
+        <td>${item.quantity}</td>
+        <td>${moneyForSale(item.unit_price)}</td>
+        <td>${moneyForSale(item.line_total)}</td>
+        <td><button class="danger small-btn" onclick="removeReceiptItem('${item.product_id}')">Remove</button></td>
+      </tr>
+    `;
+  });
+
+  if (!table.innerHTML) {
+    table.innerHTML = `<tr><td colspan="5">No products added yet. Select a product above and press Enter or Add.</td></tr>`;
+  }
+
+  updateReceiptTotals();
+}
+
+function updateReceiptTotals() {
+  const total = receiptTotal();
+  const itemCount = receiptItemCount();
+
+  const grandTotal = document.getElementById("receiptGrandTotal");
+  const receiptCount = document.getElementById("receiptItemCount");
+  const paymentTotal = document.getElementById("paymentTotal");
+
+  if (grandTotal) grandTotal.textContent = moneyForSale(total);
+  if (receiptCount) receiptCount.textContent = itemCount;
+  if (paymentTotal) paymentTotal.textContent = moneyForSale(total);
+
+  renderReceiptOnlyTotals();
+  updatePaymentPreview();
+}
+
+function renderReceiptOnlyTotals() {
+  const table = document.getElementById("receiptItemsTable");
+  if (!table || !receiptItems.length) return;
+
+  Array.from(table.querySelectorAll("tr")).forEach((row, index) => {
+    const item = receiptItems[index];
+    if (!item) return;
+    const cells = row.querySelectorAll("td");
+    if (cells.length >= 4) {
+      cells[2].textContent = moneyForSale(item.unit_price);
+      cells[3].textContent = moneyForSale(item.line_total);
+    }
+  });
+}
+
+function onPaymentMethodChange() {
+  const method = document.getElementById("paymentMethod")?.value || "CASH";
+  const amountInput = document.getElementById("amountReceived");
+  if (amountInput && method !== "CASH") {
+    amountInput.value = receiptTotal().toFixed(2);
+  }
+  updatePaymentPreview();
+}
+
+function updatePaymentPreview() {
+  const total = receiptTotal();
+  const amount = Number(document.getElementById("amountReceived")?.value || 0);
+  const method = document.getElementById("paymentMethod")?.value || "CASH";
+  const change = method === "CASH" && amount > total ? amount - total : 0;
+
+  const amountEl = document.getElementById("paymentAmountReceived");
+  const changeEl = document.getElementById("paymentChange");
+  if (amountEl) amountEl.textContent = moneyForSale(amount);
+  if (changeEl) changeEl.textContent = moneyForSale(change);
+}
+
+function validatePayment() {
+  const total = receiptTotal();
+  const amount = Number(document.getElementById("amountReceived")?.value || 0);
+  const method = document.getElementById("paymentMethod")?.value || "CASH";
+
+  if (receiptItems.length === 0) {
+    showMessage("saleMessage", "Add at least one product to the receipt first.", "error");
+    return false;
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    showMessage("saleMessage", "Enter the amount received.", "error");
+    return false;
+  }
+
+  if (amount < total) {
+    showMessage("saleMessage", "Amount received is less than the total cost of goods.", "error");
+    return false;
+  }
+
+  if (method !== "CASH" && Number(amount.toFixed(2)) !== Number(total.toFixed(2))) {
+    showMessage("saleMessage", "For POS / EcoCash payments, amount received must be exactly equal to the total cost.", "error");
+    return false;
+  }
+
+  return true;
+}
+
+async function fetchSaleItems(saleId) {
+  const { data, error } = await supabaseClient
+    .from("sale_items")
+    .select("*")
+    .eq("sale_id", saleId)
+    .order("description", { ascending: true });
+
+  if (error) {
+    console.warn("Could not load sale items:", error.message);
+    return [];
+  }
+
+  return data || [];
+}
+
+async function recordSale() {
+  if (!validatePayment()) return;
+
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const paymentMethod = document.getElementById("paymentMethod")?.value || "CASH";
+  const amountReceived = Number(document.getElementById("amountReceived")?.value || 0);
+
+  const { data: saleId, error } = await supabaseClient.rpc("record_invoice_sale_rpc", {
+    p_items: receiptItems.map(item => ({ product_id: item.product_id, quantity: item.quantity })),
+    p_currency: currency,
+    p_payment_method: paymentMethod,
+    p_amount_received: amountReceived
   });
 
   if (error) {
@@ -176,16 +400,22 @@ async function recordSale() {
     return;
   }
 
-  document.getElementById("saleQuantity").value = "";
   await loadAll();
 
-  const latestSale = sales[0];
-  if (latestSale) {
-    await enqueuePastelSync("sale_invoice", "sales", latestSale.id || `${latestSale.created_at}-${latestSale.product_id}`, buildPastelSalePayload(latestSale));
+  const recordedSale = sales.find(s => String(s.id) === String(saleId)) || sales[0];
+  if (recordedSale) {
+    recordedSale.items = await fetchSaleItems(recordedSale.id);
+    await enqueuePastelSync("sale_invoice", "sales", recordedSale.id, buildPastelSalePayload(recordedSale));
     await loadPastelSyncJobs();
   }
 
-  showMessage("saleMessage", "Sale recorded successfully and queued for Pastel sync.");
+  const total = receiptTotal();
+  const change = paymentMethod === "CASH" && amountReceived > total ? amountReceived - total : 0;
+  receiptItems = [];
+  document.getElementById("amountReceived").value = "";
+  renderReceipt();
+  await loadAll();
+  showMessage("saleMessage", `Sale recorded successfully. ${change > 0 ? `Change: ${currencySymbol()}${change.toFixed(2)}.` : ""} Queued for ZIMRA and Pastel sync.`);
   render();
 }
 
@@ -437,9 +667,13 @@ function fillDropdowns() {
     select.innerHTML = "";
 
     products.forEach(p => {
-      select.innerHTML += `<option value="${p.id}">${p.name} — ${p.quantity} left — ${money(p.selling_price)}</option>`;
+      const disabled = Number(p.quantity || 0) <= 0 ? "disabled" : "";
+      select.innerHTML += `<option value="${p.id}" ${disabled}>${p.name} — ${p.quantity} left — ${money(p.selling_price)}</option>`;
     });
   });
+
+  if (document.getElementById("saleProduct")) onSaleProductChange();
+  renderReceipt();
 }
 
 function render() {
@@ -496,13 +730,18 @@ function render() {
   salesTable.innerHTML = "";
 
   sales.slice(0, 50).forEach(s => {
+    const currency = s.currency || "USD";
+    const prefix = currency === "ZWG" ? "ZWG " : "$";
     salesTable.innerHTML += `
       <tr>
         <td>${new Date(s.created_at).toLocaleString()}</td>
-        <td>${s.product_name}</td>
+        <td>${s.receipt_number || ""}</td>
+        <td>${s.product_name || "Sale"}</td>
         <td>${s.quantity}</td>
-        <td>${money(s.revenue)}</td>
-        <td>${money(s.gross_profit)}</td>
+        <td>${currency}</td>
+        <td>${s.payment_method || ""}</td>
+        <td>${prefix}${Number(s.revenue || 0).toFixed(2)}</td>
+        <td>${prefix}${Number(s.gross_profit || 0).toFixed(2)}</td>
       </tr>
     `;
   });
@@ -522,8 +761,9 @@ function render() {
     `;
   });
 
+  renderReceipt();
+  renderPastelSyncStatus();
   updatePastelPreview();
-  openPanel("dashboardPanel");
 }
 
 
@@ -544,23 +784,47 @@ function buildPastelSalePayload(sale) {
   const qty = Number(sale.quantity || 0);
   const revenue = Number(sale.revenue || 0);
   const unitPrice = qty ? revenue / qty : 0;
+  const items = Array.isArray(sale.items) && sale.items.length
+    ? sale.items.map(item => ({
+        itemCode: item.product_id || item.description,
+        itemDescription: item.description,
+        quantity: Number(item.quantity || 0),
+        unitPriceExcl: Number(item.unit_price || 0),
+        taxCode: cfg.taxCode || "0",
+        taxAmount: 0,
+        lineTotalIncl: Number(item.line_total || 0)
+      }))
+    : [{
+        itemCode: sale.product_id || sale.product_name,
+        itemDescription: sale.product_name,
+        quantity: qty,
+        unitPriceExcl: Number(unitPrice.toFixed(2)),
+        taxCode: cfg.taxCode || "0",
+        taxAmount: 0,
+        lineTotalIncl: Number(revenue.toFixed(2))
+      }];
 
   return {
     type: "sale_invoice",
     source: PASTEL_SYNC_SOURCE,
-    documentNo: pastelDocumentNumber(sale, 0),
+    documentNo: sale.receipt_number || pastelDocumentNumber(sale, 0),
     documentDate: pastelDate(sale.created_at),
     customerCode: cfg.customerCode || "CASH001",
-    customerName: "Cash Customer",
-    itemCode: sale.product_id || sale.product_name,
-    itemDescription: sale.product_name,
+    customerName: sale.customer_name || "Cash Customer",
+    currency: sale.currency || "USD",
+    paymentMethod: sale.payment_method || "CASH",
+    amountReceived: Number(sale.amount_received || 0),
+    changeAmount: Number(sale.change_amount || 0),
+    itemCode: items[0]?.itemCode,
+    itemDescription: items[0]?.itemDescription,
     quantity: qty,
     unitPriceExcl: Number(unitPrice.toFixed(2)),
     taxCode: cfg.taxCode || "0",
     taxAmount: 0,
     lineTotalIncl: Number(revenue.toFixed(2)),
+    lines: items,
     salesAccount: cfg.salesAccount || "4000/000",
-    reference: "Millet POS real-time sale",
+    reference: "Millet POS multi-item sale",
     raw: sale
   };
 }

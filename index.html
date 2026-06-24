@@ -72,16 +72,75 @@
       </section>
 
       <section id="salesPanel" class="panel">
-        <div class="page-title"><h1>Record Sale</h1><p>This page is only for selling products.</p></div>
+        <div class="page-title">
+          <h1>Record Sale</h1>
+          <p>Add several products to one receipt, then complete payment once.</p>
+        </div>
+
         <div class="card">
-          <label>Product<select id="saleProduct"></select></label>
-          <label>Quantity Sold<input id="saleQuantity" type="number" min="1"/></label>
-          <button onclick="recordSale()">Record Sale</button>
+          <h2>Add Product to Receipt</h2>
+          <div class="sale-entry-row">
+            <label>Product
+              <select id="saleProduct" onchange="onSaleProductChange()"></select>
+            </label>
+            <label>Quantity
+              <input id="saleQuantity" type="number" min="1" step="1" value="1" onkeydown="handleSaleQuantityKey(event)"/>
+            </label>
+            <button class="add-line-btn" onclick="addProductToReceipt()">Add / Enter</button>
+          </div>
+          <p id="saleProductHint" class="muted">Select a product. Default quantity is 1.</p>
           <div id="saleMessage"></div>
         </div>
+
+        <div class="card">
+          <h2>Current Receipt</h2>
+          <table>
+            <thead>
+              <tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Action</th></tr>
+            </thead>
+            <tbody id="receiptItemsTable"></tbody>
+          </table>
+
+          <div class="receipt-summary">
+            <div class="metric">Total Amount<strong id="receiptGrandTotal">$0.00</strong></div>
+            <div class="metric">Items on Receipt<strong id="receiptItemCount">0</strong></div>
+          </div>
+        </div>
+
+        <div class="card payment-card">
+          <h2>Payment</h2>
+          <div class="form-grid payment-grid">
+            <label>Currency
+              <select id="saleCurrency" onchange="updateReceiptTotals()">
+                <option value="USD" selected>USD</option>
+                <option value="ZWG">ZWG</option>
+              </select>
+            </label>
+            <label>Payment Method
+              <select id="paymentMethod" onchange="onPaymentMethodChange()">
+                <option value="CASH" selected>CASH</option>
+                <option value="POS (SWIPE)">POS (SWIPE)</option>
+                <option value="ECOCASH">ECOCASH</option>
+              </select>
+            </label>
+            <label>Amount Received
+              <input id="amountReceived" type="number" min="0" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()"/>
+            </label>
+          </div>
+
+          <div class="metrics payment-metrics">
+            <div class="metric">Total Cost<strong id="paymentTotal">$0.00</strong></div>
+            <div class="metric">Amount Received<strong id="paymentAmountReceived">$0.00</strong></div>
+            <div class="metric">Change<strong id="paymentChange">$0.00</strong></div>
+          </div>
+
+          <button onclick="recordSale()">Record Sale</button>
+          <button class="danger" onclick="clearReceipt()">Clear Receipt</button>
+        </div>
+
         <div class="card">
           <h2>Recent Sales</h2>
-          <table><thead><tr><th>Date</th><th>Product</th><th>Qty</th><th>Revenue</th><th>Gross Profit</th></tr></thead><tbody id="salesTable"></tbody></table>
+          <table><thead><tr><th>Date</th><th>Receipt</th><th>Products</th><th>Qty</th><th>Currency</th><th>Payment</th><th>Total</th><th>Gross Profit</th></tr></thead><tbody id="salesTable"></tbody></table>
         </div>
       </section>
 

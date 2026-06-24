@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Millet Electronics POS</title>
+  <link rel="stylesheet" href="assets/style.css"/>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <img src="assets/millet-logo.jpeg" alt="Millet Electronics" class="login-logo"/>
+      <h1>Millet Electronics</h1>
+      <p>Login to continue</p>
+
+      <label>Email
+        <input id="email" type="email" placeholder="cashier@millet.com"/>
+      </label>
+
+      <label>Password
+        <input id="password" type="password" placeholder="Enter password"/>
+      </label>
+
+      <button onclick="login()">Login</button>
+      <div id="loginMessage"></div>
+    </div>
+  </div>
+
+  <div id="app" class="hidden app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/millet-logo.jpeg" class="sidebar-logo" alt="Millet Electronics"/>
+        <h2>Millet Electronics</h2>
+        <p id="userInfo"></p>
+      </div>
+
+      <nav class="side-nav">
+        <button onclick="openPanel('dashboardPanel')" class="nav-btn active">Dashboard</button>
+        <button onclick="openPanel('salesPanel')" class="nav-btn">Record Sale</button>
+        <button onclick="openPanel('stockPanel')" class="nav-btn supervisor-only">Add / Receive Stock</button>
+        <button onclick="openPanel('deductPanel')" class="nav-btn supervisor-only">Deduct Stock</button>
+        <button onclick="openPanel('stockTakePanel')" class="nav-btn supervisor-only">Stock Take</button>
+        <button onclick="openPanel('reportsPanel')" class="nav-btn supervisor-only">Reports</button>
+        <button onclick="openPanel('pastelPanel')" class="nav-btn supervisor-only">Pastel Auto Sync</button>
+        <button onclick="openPanel('movementsPanel')" class="nav-btn supervisor-only">Stock Movements</button>
+        <button onclick="openPanel('settingsPanel')" class="nav-btn supervisor-only">Settings</button>
+        <button onclick="openPanel('passwordPanel')" class="nav-btn">Change Password</button>
+      </nav>
+
+      <button class="logout" onclick="logout()">Logout</button>
+    </aside>
+
+    <main class="content">
+      <section id="dashboardPanel" class="panel active-panel">
+        <div class="page-title">
+          <h1>Dashboard</h1>
+          <p>Overview only. Use the left menu to open each function separately.</p>
+        </div>
+        <div class="metrics">
+          <div class="metric">Today's Sales<strong id="todaySales">$0.00</strong></div>
+          <div class="metric">Today's Net Profit<strong id="todayProfit">$0.00</strong></div>
+          <div class="metric">Products<strong id="productCount">0</strong></div>
+          <div class="metric">Most Sought Today<strong id="topProduct">No sales yet</strong></div>
+        </div>
+        <div class="card"><h2>Low Stock Alerts</h2><div id="alerts"></div></div>
+        <div class="card">
+          <h2>Stock List</h2>
+          <table><thead><tr><th>Product</th><th>Cost</th><th>Selling</th><th>Stock</th><th>Alert At</th></tr></thead><tbody id="stockTable"></tbody></table>
+        </div>
+      </section>
+
+      <section id="salesPanel" class="panel">
+        <div class="page-title"><h1>Record Sale</h1><p>This page is only for selling products.</p></div>
+        <div class="card">
+          <label>Product<select id="saleProduct"></select></label>
+          <label>Quantity Sold<input id="saleQuantity" type="number" min="1"/></label>
+          <button onclick="recordSale()">Record Sale</button>
+          <div id="saleMessage"></div>
+        </div>
+        <div class="card">
+          <h2>Recent Sales</h2>
+          <table><thead><tr><th>Date</th><th>Product</th><th>Qty</th><th>Revenue</th><th>Gross Profit</th></tr></thead><tbody id="salesTable"></tbody></table>
+        </div>
+      </section>
+
+      <section id="stockPanel" class="panel supervisor-only">
+        <div class="page-title"><h1>Add / Receive Stock</h1><p>This page is only for adding new stock.</p></div>
+        <div class="card">
+          <label>Product Name<input id="productName" placeholder="Product name"/></label>
+          <label>Cost Price ($)<input id="costPrice" type="number" min="0" step="0.01"/></label>
+          <label>Selling Price ($)<input id="sellingPrice" type="number" min="0" step="0.01"/></label>
+          <label>Quantity Received<input id="quantity" type="number" min="1"/></label>
+          <label>Low Stock Alert Level<input id="alertLevel" type="number" min="1" value="5"/></label>
+          <button onclick="receiveStock()">Add / Receive Stock</button>
+          <div id="stockMessage"></div>
+        </div>
+      </section>
+
+      <section id="deductPanel" class="panel supervisor-only">
+        <div class="page-title"><h1>Deduct Stock</h1><p>This page is only for stock deductions.</p></div>
+        <div class="card">
+          <label>Product<select id="deductProduct"></select></label>
+          <label>Quantity to Deduct<input id="deductQuantity" type="number" min="1"/></label>
+          <label>Reason<input id="deductReason" placeholder="Damaged / expired / missing"/></label>
+          <button class="danger" onclick="deductStock()">Deduct Stock</button>
+        </div>
+      </section>
+
+      <section id="stockTakePanel" class="panel supervisor-only">
+        <div class="page-title"><h1>Stock Take</h1><p>This page is only for stock take adjustments.</p></div>
+        <div class="card">
+          <label>Product<select id="stockTakeProduct"></select></label>
+          <label>Actual Counted Quantity<input id="stockTakeQuantity" type="number" min="0"/></label>
+          <button onclick="stockTake()">Submit Stock Take</button>
+        </div>
+      </section>
+
+      <section id="reportsPanel" class="panel supervisor-only">
+        <div class="page-title"><h1>Reports</h1><p>View daily, weekly, and monthly reports.</p></div>
+        <div class="card">
+          <button onclick="showReport('daily')">Daily</button>
+          <button onclick="showReport('weekly')">Weekly</button>
+          <button onclick="showReport('monthly')">Monthly</button>
+          <div id="report"></div>
+        </div>
+      </section>
+
+
+      <section id="pastelPanel" class="panel supervisor-only">
+        <div class="page-title">
+          <h1>Sage Pastel Auto Sync</h1>
+          <p>New sales and stock movements are queued automatically for the local Pastel connector. CSV export remains available as a fallback.</p>
+        </div>
+
+        <div class="card pastel-card">
+          <h2>Real-Time Sync Queue</h2>
+          <p class="muted">Keep the <strong>pastel-connector</strong> service running on the computer/server where Sage Pastel is installed. Every new POS sale is queued here and the connector posts it to Pastel automatically.</p>
+          <div class="metrics">
+            <div class="metric">Queue Table<strong id="pastelQueueAvailable">Checking</strong></div>
+            <div class="metric">Pending<strong id="pastelPendingCount">0</strong></div>
+            <div class="metric">Synced<strong id="pastelSyncedCount">0</strong></div>
+            <div class="metric">Failed<strong id="pastelFailedCount">0</strong></div>
+          </div>
+          <button onclick="refreshPastelSyncStatus()">Refresh Sync Status</button>
+          <div id="pastelSyncMessage"></div>
+          <table>
+            <thead><tr><th>Queued</th><th>Type</th><th>Reference</th><th>Status</th><th>Attempts</th><th>Action / Error</th></tr></thead>
+            <tbody id="pastelSyncTable"></tbody>
+          </table>
+        </div>
+
+        <div class="card pastel-card">
+          <h2>Export Period</h2>
+          <p class="muted">Choose the period you want to send to Pastel. For best results, export once per day after closing cash-up.</p>
+          <div class="form-grid">
+            <label>From Date
+              <input id="pastelFromDate" type="date"/>
+            </label>
+            <label>To Date
+              <input id="pastelToDate" type="date"/>
+            </label>
+            <label>Customer / Account Code
+              <input id="pastelCustomerCode" value="CASH001" placeholder="CASH001"/>
+            </label>
+            <label>Sales Account
+              <input id="pastelSalesAccount" value="4000/000" placeholder="4000/000"/>
+            </label>
+            <label>VAT / Tax Code
+              <input id="pastelTaxCode" value="0" placeholder="0"/>
+            </label>
+            <label>Document Prefix
+              <input id="pastelDocPrefix" value="MIL" placeholder="MIL"/>
+            </label>
+          </div>
+          <div id="pastelMessage"></div>
+        </div>
+
+        <div class="card">
+          <h2>Pastel CSV Exports</h2>
+          <button onclick="exportPastelSalesInvoices()">Export Sales Invoices CSV</button>
+          <button onclick="exportPastelDailyJournal()">Export Daily Journal CSV</button>
+          <button onclick="exportPastelProducts()">Export Inventory Items CSV</button>
+          <button onclick="exportPastelStockMovements()">Export Stock Movements CSV</button>
+          <button onclick="exportPastelBundle()">Export All Pastel Files</button>
+          <p class="muted">Use these only if the real-time connector is offline or your Pastel version only supports imports. Import in Pastel using File → Import/Export and map the CSV columns to your company fields.</p>
+        </div>
+
+        <div class="card">
+          <h2>Export Preview</h2>
+          <div class="metrics">
+            <div class="metric">Sales in Period<strong id="pastelSalesCount">0</strong></div>
+            <div class="metric">Revenue in Period<strong id="pastelRevenue">$0.00</strong></div>
+            <div class="metric">Inventory Items<strong id="pastelProductCount">0</strong></div>
+            <div class="metric">Stock Movements<strong id="pastelMovementCount">0</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Date</th><th>Document</th><th>Customer</th><th>Product</th><th>Qty</th><th>Total</th></tr></thead>
+            <tbody id="pastelPreviewTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="movementsPanel" class="panel supervisor-only">
+        <div class="page-title"><h1>Stock Movement History</h1><p>Audit history of stock activity.</p></div>
+        <div class="card">
+          <table><thead><tr><th>Date</th><th>Type</th><th>Product</th><th>Qty Change</th><th>Reason</th></tr></thead><tbody id="movementTable"></tbody></table>
+        </div>
+      </section>
+
+      <section id="settingsPanel" class="panel supervisor-only">
+        <div class="page-title"><h1>Settings</h1><p>Set rent for profit calculations.</p></div>
+        <div class="card">
+          <label>Monthly Rent ($)<input id="monthlyRent" type="number" min="0" step="0.01"/></label>
+          <button onclick="saveSettings()">Save Rent</button>
+        </div>
+      </section>
+
+      <section id="passwordPanel" class="panel">
+        <div class="page-title"><h1>Change Password</h1><p>Enter old password, then re-enter the new password.</p></div>
+        <div class="card">
+          <label>Old Password<input id="oldPassword" type="password" placeholder="Enter old password"/></label>
+          <label>New Password<input id="newPassword" type="password" placeholder="Enter new password"/></label>
+          <label>Re-enter New Password<input id="confirmNewPassword" type="password" placeholder="Re-enter new password"/></label>
+          <button onclick="changePassword()">Change Password</button>
+          <div id="passwordMessage"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

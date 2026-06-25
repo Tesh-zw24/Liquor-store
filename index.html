@@ -34,6 +34,7 @@
       <nav class="side-nav">
         <button class="nav-btn active" onclick="openPanel('dashboardPanel')">Dashboard</button>
         <button class="nav-btn" onclick="openPanel('salesPanel')">Record Sale</button>
+        <button class="nav-btn supervisor-only" onclick="openPanel('cancelPanel')">Cancel Transaction</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('stockPanel')">Add / Receive Stock</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('deductPanel')">Deduct Stock</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('stockTakePanel')">Stock Take</button>
@@ -41,7 +42,7 @@
         <button class="nav-btn supervisor-only" onclick="openPanel('pastelPanel')">Pastel Auto Sync</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('movementsPanel')">Stock Movements</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('settingsPanel')">Settings</button>
-        <button class="nav-btn" onclick="openPanel('passwordPanel')">Change Password</button>
+        <button class="nav-btn" onclick="openPanel('passwordPanel')">User Administration</button>
         <button class="logout" onclick="logout()">Logout</button>
       </nav>
     </aside>
@@ -110,6 +111,13 @@
               <div class="metric compact-metric">Items on Receipt<strong id="receiptItemCount">0</strong></div>
             </div>
             <button class="danger small-btn" onclick="clearReceipt()">Clear Receipt</button>
+            <div class="transfer-box">
+              <button class="small-btn" onclick="toggleTransferOptions()">Transfer Transaction</button>
+              <div id="transferOptions" class="transfer-options hidden">
+                <button class="small-btn" onclick="receiveTransferPrompt()">Receive Transaction</button>
+                <button class="small-btn" onclick="transferCurrentReceipt()">Transfer Transaction</button>
+              </div>
+            </div>
           </div>
 
           <div class="card payment-card compact-card">
@@ -125,8 +133,7 @@
               <label>Payment Method
                 <select id="paymentMethod" onchange="onPaymentMethodChange()">
                   <option value="CASH" selected>CASH</option>
-                  <option value="POS">POS (SWIPE)</option>
-                  <option value="ECOCASH">ECOCASH</option>
+                  <option value="POS_ECOCASH">POS (Swipe / EcoCash)</option>
                 </select>
               </label>
               <label>Amount Received
@@ -142,14 +149,22 @@
           </div>
         </div>
 
-        <div class="card recent-sales-card">
-          <h2>Recent Sales</h2>
-          <table>
-            <thead>
-              <tr><th>Date</th><th>Receipt</th><th>Product</th><th>Qty</th><th>Currency</th><th>Method</th><th>Revenue</th><th>Profit</th></tr>
-            </thead>
-            <tbody id="salesTable"></tbody>
-          </table>
+      </section>
+
+      <section id="cancelPanel" class="panel">
+        <div class="page-title">
+          <h1>Cancel Transaction</h1>
+          <p>Supervisor-only cancellation. Enter the receipt number and a short reason.</p>
+        </div>
+        <div class="card">
+          <label>Receipt Number
+            <input id="cancelReceiptNumber" type="text" placeholder="e.g. INV-20260624-203000-123" />
+          </label>
+          <label>Reason for Cancellation <span class="muted">(maximum 40 letters)</span>
+            <input id="cancelReason" type="text" maxlength="40" placeholder="Reason, max 40 letters" />
+          </label>
+          <button class="danger" onclick="cancelTransaction()">Cancel Transaction</button>
+          <div id="cancelMessage"></div>
         </div>
       </section>
 
@@ -160,22 +175,24 @@
         </div>
         <div class="card">
           <label>Product Name
-            <input id="productName" list="productNameList" oninput="onProductNameInput()" placeholder="Start typing or choose previous product" />
-            <datalist id="productNameList"></datalist>
+            <select id="productName" onchange="onProductNameInput()"></select>
           </label>
-          <label>Cost Price ($)
-            <input id="costPrice" type="number" step="0.001" />
+          <label id="newProductNameWrap" class="hidden">New Product Name
+            <input id="newProductName" type="text" placeholder="Type new product name" />
           </label>
-          <label>Selling Price ($)
-            <input id="sellingPrice" type="number" step="0.01" />
-          </label>
-          <label>Quantity Received
-            <input id="quantity" type="number" min="1" step="1" />
-          </label>
-          <label>Low Stock Alert Level
-            <input id="alertLevel" type="number" min="0" step="1" value="5" />
-          </label>
+          <div class="form-grid receive-stock-grid">
+            <label>Current Selling Price ($)
+              <input id="sellingPrice" type="number" step="0.01" />
+            </label>
+            <label>Quantity Received
+              <input id="quantity" type="number" min="1" step="1" />
+            </label>
+            <label>Low Stock Alert Level
+              <input id="alertLevel" type="number" min="0" step="1" value="5" />
+            </label>
+          </div>
           <button onclick="receiveStock()">Add / Receive Stock</button>
+          <button class="small-btn" onclick="changeReceiveStockPrice()">Change Price</button>
           <div id="stockMessage"></div>
         </div>
       </section>
@@ -220,7 +237,7 @@
           <h1>Reports</h1>
           <p>Sales reports and daily cashup summaries.</p>
         </div>
-        <div class="card">
+        <div class="card supervisor-only" id="salesPerformanceCard">
           <h2>Sales Performance</h2>
           <button onclick="showReport('daily')">Daily Report</button>
           <button onclick="showReport('weekly')">Weekly Report</button>
@@ -241,8 +258,8 @@
           <h3>Cashier Cashup</h3>
           <div class="metrics compact-cashup-metrics">
             <div class="metric compact-metric">Cash<strong id="cashierCashTotal">$0.00</strong></div>
-            <div class="metric compact-metric">POS / Swipe<strong id="cashierPosTotal">$0.00</strong></div>
-            <div class="metric compact-metric">EcoCash<strong id="cashierEcocashTotal">$0.00</strong></div>
+            <div class="metric compact-metric">POS (Swipe / EcoCash)<strong id="cashierPosTotal">$0.00</strong></div>
+            <div class="metric compact-metric legacy-ecocash">EcoCash<strong id="cashierEcocashTotal">$0.00</strong></div>
             <div class="metric compact-metric">Total<strong id="cashierGrandTotal">$0.00</strong></div>
           </div>
           <p id="cashierCashupStatus" class="muted"></p>
@@ -250,10 +267,10 @@
             <label>Actual Cash Amount
               <input id="actualCashAmount" type="number" min="0" step="0.01" />
             </label>
-            <label>Actual POS / Swipe Amount
+            <label id="actualPosLabel">Actual POS (Swipe / EcoCash) Amount
               <input id="actualPosAmount" type="number" min="0" step="0.01" />
             </label>
-            <label>Actual EcoCash Amount
+            <label id="actualEcocashLabel" class="legacy-ecocash">Actual EcoCash Amount
               <input id="actualEcocashAmount" type="number" min="0" step="0.01" />
             </label>
           </div>
@@ -266,7 +283,7 @@
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Cashier</th><th>Status</th><th>Cash</th><th>POS</th><th>EcoCash</th><th>Total</th><th>Difference</th><th>Action</th></tr>
+                  <tr><th>Cashier</th><th>Status</th><th>Cash</th><th>POS (Swipe / EcoCash)</th><th>Total</th><th>Difference</th><th>Action</th></tr>
                 </thead>
                 <tbody id="supervisorCashupTable"></tbody>
               </table>
@@ -332,10 +349,12 @@
           <p>Audit trail for stock received, deducted, sold, and stock take adjustments.</p>
         </div>
         <div class="card">
-          <table>
-            <thead><tr><th>Date</th><th>Movement</th><th>Product</th><th>Qty Change</th><th>Reason</th></tr></thead>
-            <tbody id="movementTable"></tbody>
-          </table>
+          <div class="period-buttons">
+            <button onclick="renderMovementReports('daily')">Daily</button>
+            <button onclick="renderMovementReports('weekly')">Weekly</button>
+            <button onclick="renderMovementReports('monthly')">Monthly</button>
+          </div>
+          <div id="movementGroupedReport"></div>
         </div>
       </section>
 
@@ -351,8 +370,8 @@
             <select id="priceProduct" onchange="onPriceProductChange()"></select>
           </label>
           <div class="form-grid">
-            <label>New Cost Price ($)
-              <input id="newCostPrice" type="number" min="0" step="0.001" />
+            <label>Current Selling Price ($)
+              <input id="currentSellingPrice" type="number" disabled />
             </label>
             <label>New Selling Price ($)
               <input id="newSellingPrice" type="number" min="0" step="0.01" />
@@ -382,7 +401,7 @@
 
       <section id="passwordPanel" class="panel">
         <div class="page-title">
-          <h1>Change Password</h1>
+          <h1>User Administration</h1>
           <p>Update your login password securely.</p>
         </div>
         <div class="card">
@@ -404,6 +423,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>

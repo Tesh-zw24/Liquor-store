@@ -1933,3 +1933,702 @@ function onSaleCurrencyChange() {
   renderReceipt();
   onPaymentMethodChange();
 }
+
+/* =========================
+   Requested POS controls update
+   ========================= */
+let lastMovementPeriod = "daily";
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function logout() {
+  receiptItems = [];
+  try { sessionStorage.removeItem("millet_pending_receipt"); } catch (_) {}
+  const amount = document.getElementById("amountReceived");
+  if (amount) amount.value = "";
+  await supabaseClient.auth.signOut();
+  currentUser = null;
+  currentProfile = null;
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("app").classList.add("hidden");
+}
+
+function selectedPaymentMethod() {
+  return document.getElementById("paymentMethod")?.value || "CASH";
+}
+
+function methodLabel(method) {
+  const m = String(method || "CASH").toUpperCase();
+  if (m === "POS_ECOCASH" || m === "POS" || m === "SWIPE" || m === "ECOCASH") return "POS (Swipe / EcoCash)";
+  return "CASH";
+}
+
+function onPaymentMethodChange() {
+  const method = selectedPaymentMethod();
+  const amountInput = document.getElementById("amountReceived");
+  if (amountInput && method !== "CASH") amountInput.value = receiptTotal().toFixed(2);
+  updatePaymentPreview();
+}
+
+function onSaleCurrencyChange() {
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const methodSelect = document.getElementById("paymentMethod");
+  if (methodSelect) {
+    if (currency === "ZAR") {
+      methodSelect.value = "CASH";
+      methodSelect.disabled = true;
+      showMessage("saleMessage", "ZAR transactions are cash only.");
+    } else {
+      methodSelect.disabled = false;
+    }
+  }
+  renderReceipt();
+  onPaymentMethodChange();
+}
+
+function updatePaymentPreview() {
+  const total = receiptTotal();
+  const amount = Number(document.getElementById("amountReceived")?.value || 0);
+  const method = selectedPaymentMethod();
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const change = method === "CASH" && amount > total ? amount - total : 0;
+  const amountEl = document.getElementById("paymentAmountReceived");
+  const changeEl = document.getElementById("paymentChange");
+  const totalEl = document.getElementById("paymentTotal");
+  if (totalEl) totalEl.textContent = formatCurrency(total, currency);
+  if (amountEl) amountEl.textContent = formatCurrency(amount, currency);
+  if (changeEl) changeEl.textContent = formatCurrency(change, currency);
+}
+
+function validatePayment() {
+  const total = receiptTotal();
+  const amount = Number(document.getElementById("amountReceived")?.value || 0);
+  const method = selectedPaymentMethod();
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  if (receiptItems.length === 0) {
+    showMessage("saleMessage", "Add at least one product to the receipt first.", "error");
+    return false;
+  }
+  if (currency === "ZAR" && method !== "CASH") {
+    showMessage("saleMessage", "ZAR is cash only. POS / EcoCash is disabled for ZAR.", "error");
+    return false;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    showMessage("saleMessage", "Enter the amount received.", "error");
+    return false;
+  }
+  if (amount < total) {
+    showMessage("saleMessage", "Amount received is less than the total cost of goods.", "error");
+    return false;
+  }
+  if (method !== "CASH" && Number(amount.toFixed(2)) !== Number(total.toFixed(2))) {
+    showMessage("saleMessage", "For POS (Swipe / EcoCash), amount received must be exactly equal to the total cost.", "error");
+    return false;
+  }
+  return true;
+}
+
+function toggleTransferOptions() {
+  const el = document.getElementById("transferOptions");
+  if (el) el.classList.toggle("hidden");
+}
+
+async function transferCurrentReceipt() {
+  if (!receiptItems.length) {
+    showMessage("saleMessage", "Add products to the receipt before transferring.", "error");
+    return;
+  }
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const transferItems = receiptItems.map(item => ({ ...item }));
+  const { data, error } = await supabaseClient.rpc("create_transfer_transaction_rpc", {
+    p_items: transferItems.map(item => ({ product_id: item.product_id, quantity: item.quantity })),
+    p_currency: currency
+  });
+  if (error) {
+    showMessage("saleMessage", error.message, "error");
+    return;
+  }
+  const code = data?.transfer_code || data?.code;
+  receiptItems = [];
+  renderReceipt();
+  printTransferSlip(code, currency, transferItems);
+  showMessage("saleMessage", `Transaction transferred. Code: ${escapeHtml(code)}`);
+}
+
+function receiveTransferPrompt() {
+  const code = window.prompt("Scan the transfer barcode or enter the transfer number:");
+  if (!code) return;
+  receiveTransferredReceipt(code.trim());
+}
+
+async function receiveTransferredReceipt(code) {
+  const { data, error } = await supabaseClient.rpc("receive_transfer_transaction_rpc", { p_transfer_code: code });
+  if (error) {
+    showMessage("saleMessage", error.message, "error");
+    return;
+  }
+  const transferredItems = data?.items || [];
+  const newItems = [];
+  for (const line of transferredItems) {
+    const product = getProductById(line.product_id);
+    if (!product) {
+      showMessage("saleMessage", `Product not found for transfer line ${escapeHtml(line.product_name || line.product_id)}.`, "error");
+      return;
+    }
+    const qty = Number(line.quantity || 0);
+    if (Number(product.quantity || 0) < qty) {
+      showMessage("saleMessage", `${product.name} now has only ${product.quantity} available. Cannot receive transferred invoice.`, "error");
+      return;
+    }
+    newItems.push({
+      product_id: product.id,
+      product_name: product.name,
+      quantity: qty,
+      unit_price: Number(product.selling_price || 0),
+      cost_price: Number(product.cost_price || 0),
+      vat_rate: Number(product.vat_rate || 15),
+      line_total: Number((qty * Number(product.selling_price || 0)).toFixed(2))
+    });
+  }
+  receiptItems = newItems;
+  const currencySelect = document.getElementById("saleCurrency");
+  if (currencySelect && data?.currency) currencySelect.value = data.currency;
+  renderReceipt();
+  onSaleCurrencyChange();
+  showMessage("saleMessage", `Transferred transaction ${escapeHtml(code)} received. Complete payment normally.`);
+}
+
+function printTransferSlip(code, currency, items = receiptItems) {
+  if (!code) return;
+  const rows = items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${item.quantity}</td></tr>`).join("");
+  const win = window.open("", "_blank", "width=420,height=620");
+  if (!win) return;
+  win.document.write(`
+    <html><head><title>Transfer Transaction ${escapeHtml(code)}</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+    <style>body{font-family:Arial;padding:18px}h2{text-align:center}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ddd;padding:6px;text-align:left}.code{text-align:center;font-size:20px;font-weight:bold;margin:10px 0}.muted{color:#666;text-align:center}</style>
+    </head><body>
+      <h2>Millet Electronics</h2>
+      <p class="muted">Transfer Transaction</p>
+      <div class="code">${escapeHtml(code)}</div>
+      <svg id="barcode"></svg>
+      <p>Currency: ${escapeHtml(currency || "USD")}</p>
+      <table><thead><tr><th>Product</th><th>Qty</th></tr></thead><tbody>${rows || ""}</tbody></table>
+      <p class="muted">Another cashier must click Receive Transaction and scan or enter this code.</p>
+      <script>try{JsBarcode('#barcode','${escapeHtml(code)}',{format:'CODE128',displayValue:true,width:2,height:70});}catch(e){};setTimeout(()=>{window.print();},500);<\/script>
+    </body></html>
+  `);
+  win.document.close();
+}
+
+function onProductNameInput() {
+  const select = document.getElementById("productName");
+  const selected = select?.value || "__new__";
+  const newWrap = document.getElementById("newProductNameWrap");
+  const selling = document.getElementById("sellingPrice");
+  const alert = document.getElementById("alertLevel");
+  if (newWrap) newWrap.classList.toggle("hidden", selected !== "__new__");
+  if (selected === "__new__") {
+    if (selling) selling.value = "";
+    if (alert) alert.value = "5";
+    return;
+  }
+  const product = getProductById(selected);
+  if (!product) return;
+  if (selling) selling.value = Number(product.selling_price || 0).toFixed(2);
+  if (alert) alert.value = Number(product.alert_level || 5);
+}
+
+async function receiveStock() {
+  if (!isSupervisor()) return;
+  const selected = document.getElementById("productName")?.value || "__new__";
+  const existingProduct = selected === "__new__" ? null : getProductById(selected);
+  const name = existingProduct ? existingProduct.name : document.getElementById("newProductName")?.value.trim();
+  const selling = safeNumber(document.getElementById("sellingPrice")?.value, -1);
+  const quantity = safeNumber(document.getElementById("quantity")?.value, 0);
+  const alertLevel = safeNumber(document.getElementById("alertLevel")?.value, 5);
+  if (!name) {
+    showMessage("stockMessage", "Enter or select a product name.", "error");
+    return;
+  }
+  if (selling < 0) {
+    showMessage("stockMessage", "Enter a valid selling price.", "error");
+    return;
+  }
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    showMessage("stockMessage", "Quantity received must be a whole number greater than zero.", "error");
+    return;
+  }
+  if (existingProduct && Number(existingProduct.selling_price || 0).toFixed(2) !== Number(selling || 0).toFixed(2)) {
+    showMessage("stockMessage", "Selling price has changed. Click Change Price first and confirm with supervisor password.", "error");
+    return;
+  }
+  const cost = existingProduct ? Number(existingProduct.cost_price || 0) : 0;
+  const { error } = await supabaseClient.rpc("receive_stock_rpc", {
+    p_name: name,
+    p_cost_price: cost,
+    p_selling_price: selling,
+    p_quantity: quantity,
+    p_alert_level: alertLevel
+  });
+  if (error) {
+    showMessage("stockMessage", error.message, "error");
+    return;
+  }
+  document.getElementById("newProductName").value = "";
+  document.getElementById("quantity").value = "";
+  await loadAll();
+  const latestMovement = movements[0];
+  if (latestMovement) {
+    await enqueuePastelSync("stock_movement", "stock_movements", latestMovement.id || `${latestMovement.created_at}-${latestMovement.product_id}`, buildPastelMovementPayload(latestMovement));
+    await loadPastelSyncJobs();
+  }
+  showMessage("stockMessage", "Stock received successfully.");
+  render();
+}
+
+async function changeReceiveStockPrice() {
+  const selected = document.getElementById("productName")?.value;
+  const product = getProductById(selected);
+  if (!product) {
+    showMessage("stockMessage", "Select an existing product before changing price.", "error");
+    return;
+  }
+  const selling = safeNumber(document.getElementById("sellingPrice")?.value, -1);
+  if (selling < 0) {
+    showMessage("stockMessage", "Enter a valid selling price.", "error");
+    return;
+  }
+  if (!(await requireSupervisorPassword("stockMessage"))) return;
+  const { error } = await supabaseClient.rpc("update_product_price_rpc", {
+    p_product_id: product.id,
+    p_cost_price: Number(product.cost_price || 0),
+    p_selling_price: selling
+  });
+  if (error) {
+    showMessage("stockMessage", error.message, "error");
+    return;
+  }
+  await loadAll();
+  showMessage("stockMessage", "Selling price changed successfully.");
+  render();
+}
+
+function onPriceProductChange() {
+  const product = getProductById(document.getElementById("priceProduct")?.value);
+  const current = document.getElementById("currentSellingPrice");
+  const selling = document.getElementById("newSellingPrice");
+  if (!product) {
+    if (current) current.value = "";
+    if (selling) selling.value = "";
+    return;
+  }
+  if (current) current.value = Number(product.selling_price || 0).toFixed(2);
+  if (selling) selling.value = Number(product.selling_price || 0).toFixed(2);
+}
+
+async function changeProductPrice() {
+  if (!(await requireSupervisorPassword("priceSettingsMessage"))) return;
+  const productId = document.getElementById("priceProduct")?.value;
+  const product = getProductById(productId);
+  const selling = safeNumber(document.getElementById("newSellingPrice")?.value, -1);
+  if (!product || selling < 0) {
+    showMessage("priceSettingsMessage", "Select product and enter a valid selling price.", "error");
+    return;
+  }
+  const { error } = await supabaseClient.rpc("update_product_price_rpc", {
+    p_product_id: product.id,
+    p_cost_price: Number(product.cost_price || 0),
+    p_selling_price: selling
+  });
+  if (error) {
+    showMessage("priceSettingsMessage", error.message, "error");
+    return;
+  }
+  await loadAll();
+  render();
+  showMessage("priceSettingsMessage", "Product selling price updated successfully.");
+}
+
+async function deductStock() {
+  if (!(await requireSupervisorPassword("stockMessage"))) return;
+  const productId = document.getElementById("deductProduct")?.value;
+  const quantity = safeNumber(document.getElementById("deductQuantity")?.value, 0);
+  const reason = document.getElementById("deductReason")?.value.trim() || "Manual deduction";
+  const { error } = await supabaseClient.rpc("deduct_stock_rpc", { p_product_id: productId, p_quantity: quantity, p_reason: reason });
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  document.getElementById("deductQuantity").value = "";
+  document.getElementById("deductReason").value = "";
+  await loadAll();
+  render();
+}
+
+async function stockTake() {
+  if (!(await requireSupervisorPassword("stockMessage"))) return;
+  const productId = document.getElementById("stockTakeProduct")?.value;
+  const actualQuantity = safeNumber(document.getElementById("stockTakeQuantity")?.value, -1);
+  const { error } = await supabaseClient.rpc("stock_take_rpc", { p_product_id: productId, p_actual_quantity: actualQuantity });
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  document.getElementById("stockTakeQuantity").value = "";
+  await loadAll();
+  render();
+}
+
+async function cancelTransaction() {
+  if (!(await requireSupervisorPassword("cancelMessage"))) return;
+  const receiptNumber = document.getElementById("cancelReceiptNumber")?.value.trim();
+  const reason = document.getElementById("cancelReason")?.value.trim();
+  if (!receiptNumber) {
+    showMessage("cancelMessage", "Enter the receipt number.", "error");
+    return;
+  }
+  if (!reason || reason.length > 40) {
+    showMessage("cancelMessage", "Enter a reason not more than 40 letters.", "error");
+    return;
+  }
+  const { error } = await supabaseClient.rpc("cancel_transaction_rpc", { p_receipt_number: receiptNumber, p_reason: reason });
+  if (error) {
+    showMessage("cancelMessage", error.message, "error");
+    return;
+  }
+  document.getElementById("cancelReceiptNumber").value = "";
+  document.getElementById("cancelReason").value = "";
+  await loadAll();
+  render();
+  showMessage("cancelMessage", "Transaction cancelled and stock restored.");
+}
+
+async function loadMovements() {
+  const { data, error } = await supabaseClient
+    .from("stock_movements")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (!error) movements = data || [];
+}
+
+function movementPeriodItems(period = lastMovementPeriod) {
+  const now = new Date();
+  return movements.filter(m => {
+    const d = new Date(m.created_at);
+    if (period === "daily") return d.toDateString() === now.toDateString();
+    if (period === "weekly") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      return d >= sevenDaysAgo && d <= now;
+    }
+    if (period === "monthly") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return true;
+  });
+}
+
+function renderMovementTable(title, rows) {
+  const totalQty = rows.reduce((sum, r) => sum + Math.abs(Number(r.quantity_change || 0)), 0);
+  const body = rows.map(m => `
+    <tr>
+      <td>${new Date(m.created_at).toLocaleString()}</td>
+      <td>${escapeHtml(m.product_name || "")}</td>
+      <td>${m.quantity_change}</td>
+      <td>${escapeHtml(m.reason || "")}</td>
+    </tr>`).join("") || `<tr><td colspan="4">No records.</td></tr>`;
+  return `
+    <div class="movement-group">
+      <h3>${title} <span class="muted">(${rows.length} records, ${totalQty} items)</span></h3>
+      <table><thead><tr><th>Date</th><th>Product</th><th>Qty Change</th><th>Reason</th></tr></thead><tbody>${body}</tbody></table>
+    </div>`;
+}
+
+function renderMovementReports(period = "daily") {
+  lastMovementPeriod = period;
+  const target = document.getElementById("movementGroupedReport");
+  if (!target) return;
+  const rows = movementPeriodItems(period);
+  const added = rows.filter(m => ["RECEIVE", "ADD", "ADDED", "STOCK_IN"].includes(String(m.movement_type || "").toUpperCase()) || Number(m.quantity_change || 0) > 0 && String(m.reason || "").toLowerCase().includes("received"));
+  const sold = rows.filter(m => String(m.movement_type || "").toUpperCase() === "SALE" || String(m.reason || "").toLowerCase().includes("receipt sale"));
+  const deducted = rows.filter(m => {
+    const t = String(m.movement_type || "").toUpperCase();
+    return t === "DEDUCT" || t === "STOCK_TAKE" || (Number(m.quantity_change || 0) < 0 && t !== "SALE");
+  });
+  target.innerHTML = `
+    <h2>${period.charAt(0).toUpperCase() + period.slice(1)} Stock Movement Report</h2>
+    ${renderMovementTable("Stock Added", added)}
+    ${renderMovementTable("Stock Deducted / Adjusted", deducted)}
+    ${renderMovementTable("Stock Sold", sold)}
+  `;
+}
+
+function getPeriodSales(period) {
+  const now = new Date();
+  return sales.filter(s => {
+    if (s.canceled_at || s.status === "cancelled") return false;
+    const d = new Date(s.created_at);
+    if (period === "daily") return d.toDateString() === now.toDateString();
+    if (period === "weekly") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      return d >= sevenDaysAgo && d <= now;
+    }
+    if (period === "monthly") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return false;
+  });
+}
+
+function calculateReport(period) {
+  const periodSales = getPeriodSales(period);
+  const revenue = periodSales.reduce((sum, s) => sum + Number(s.revenue || 0), 0);
+  const productTotals = {};
+  periodSales.forEach(s => { productTotals[s.product_name] = (productTotals[s.product_name] || 0) + Number(s.quantity || 0); });
+  let topProduct = "No sales yet";
+  let highestQty = 0;
+  Object.entries(productTotals).forEach(([name, qty]) => {
+    if (qty > highestQty) { highestQty = qty; topProduct = `${name} (${qty} sold)`; }
+  });
+  return { revenue, topProduct, numberOfSales: periodSales.length };
+}
+
+function showReport(period) {
+  if (!isSupervisor()) return;
+  lastReportPeriod = period;
+  const report = calculateReport(period);
+  const el = document.getElementById("report");
+  if (!el) return;
+  el.innerHTML = `
+    <h3>${period.charAt(0).toUpperCase() + period.slice(1)} Report</h3>
+    <div class="metrics report-metrics">
+      <div class="metric">Sales Revenue<strong>${money(report.revenue)}</strong></div>
+      <div class="metric">Most Sought Products<strong>${escapeHtml(report.topProduct)}</strong></div>
+      <div class="metric">Number of Sales<strong>${report.numberOfSales}</strong></div>
+    </div>`;
+}
+
+function cashupMethodTotalsFromSummary(summary) {
+  const cash = Number(summary?.cash || 0);
+  const pos = Number(summary?.pos || 0) + Number(summary?.ecocash || 0);
+  return { cash, pos, ecocash: 0, total: cash + pos };
+}
+
+function applyCashupCurrencyRules() {
+  const currency = cashupCurrency();
+  const posLabel = document.getElementById("actualPosLabel");
+  const posInput = document.getElementById("actualPosAmount");
+  const cashOnly = currency === "ZAR";
+  if (posLabel) posLabel.classList.toggle("hidden", cashOnly);
+  if (posInput) {
+    posInput.disabled = cashOnly;
+    if (cashOnly) posInput.value = "0";
+  }
+  const status = document.getElementById("cashierCashupStatus");
+  if (status && cashOnly) status.innerHTML = `<span class="cash-only-note">ZAR cashup is cash only because ZAR swipe / EcoCash is not accepted.</span>`;
+}
+
+function renderCashierCashupSummary() {
+  const currency = cashupCurrency();
+  const totals = cashupMethodTotalsFromSummary(cashierCashupSummary);
+  const cashEl = document.getElementById("cashierCashTotal");
+  const posEl = document.getElementById("cashierPosTotal");
+  const ecoEl = document.getElementById("cashierEcocashTotal");
+  const totalEl = document.getElementById("cashierGrandTotal");
+  if (cashEl) cashEl.textContent = formatCurrency(totals.cash, currency);
+  if (posEl) posEl.textContent = formatCurrency(currency === "ZAR" ? 0 : totals.pos, currency);
+  if (ecoEl) ecoEl.textContent = formatCurrency(0, currency);
+  if (totalEl) totalEl.textContent = formatCurrency(currency === "ZAR" ? totals.cash : totals.total, currency);
+  const status = document.getElementById("cashierCashupStatus");
+  if (status) {
+    status.textContent = (currency === "ZAR" ? totals.cash : totals.total) > 0 ? "Pending cashup for today's unconcluded transactions." : "No pending transactions for this currency.";
+  }
+  applyCashupCurrencyRules();
+}
+
+function renderSupervisorCashupSummary() {
+  const table = document.getElementById("supervisorCashupTable");
+  if (!table || !isSupervisor()) return;
+  const currency = cashupCurrency();
+  const recorded = supervisorCashupSummary?.recorded_cashups || [];
+  const pending = supervisorCashupSummary?.pending_cashiers || [];
+  table.innerHTML = "";
+  recorded.forEach(row => {
+    const pos = currency === "ZAR" ? 0 : Number(row.system_pos || 0) + Number(row.system_ecocash || 0);
+    const isOwn = String(row.cashier_id || "") === String(currentUser?.id || "");
+    table.innerHTML += `
+      <tr>
+        <td>${escapeHtml(row.cashier_name || row.cashier_id || "Cashier")}</td>
+        <td>Recorded</td>
+        <td>${formatCurrency(row.system_cash || 0, currency)}</td>
+        <td>${formatCurrency(pos, currency)}</td>
+        <td>${formatCurrency((currency === "ZAR" ? Number(row.system_cash || 0) : Number(row.total_amount || 0)), currency)}</td>
+        <td>${formatCurrency(row.difference || 0, currency)}</td>
+        <td>${isOwn ? '<span class="muted">Needs another supervisor</span>' : `<button class="small-btn" onclick="concludeCashup('${row.id}')">Conclude & Print</button>`}</td>
+      </tr>`;
+  });
+  pending.forEach(row => {
+    const pos = currency === "ZAR" ? 0 : Number(row.pos || 0) + Number(row.ecocash || 0);
+    table.innerHTML += `
+      <tr>
+        <td>${escapeHtml(row.cashier_name || row.cashier_id || "Cashier")}</td>
+        <td>Waiting for cashier cashup</td>
+        <td>${formatCurrency(row.cash || 0, currency)}</td>
+        <td>${formatCurrency(pos, currency)}</td>
+        <td>${formatCurrency(currency === "ZAR" ? Number(row.cash || 0) : Number(row.total || 0), currency)}</td>
+        <td class="muted">—</td>
+        <td class="muted">Not recorded yet</td>
+      </tr>`;
+  });
+  if (!table.innerHTML) table.innerHTML = `<tr><td colspan="7">No pending or recorded cashups for ${currency}. Once concluded, cashups disappear until new sales are made.</td></tr>`;
+}
+
+async function refreshCashupReports() {
+  applyCashupCurrencyRules();
+  await loadCashierCashupSummary();
+  if (isSupervisor()) await loadSupervisorCashupSummary();
+  renderCashierCashupSummary();
+  renderSupervisorCashupSummary();
+}
+
+async function recordCashup() {
+  const currency = cashupCurrency();
+  const cash = safeNumber(document.getElementById("actualCashAmount")?.value, 0);
+  const pos = currency === "ZAR" ? 0 : safeNumber(document.getElementById("actualPosAmount")?.value, 0);
+  const ecocash = 0;
+  const { error } = await supabaseClient.rpc("record_cashup_rpc", { p_currency: currency, p_cash_amount: cash, p_pos_amount: pos, p_ecocash_amount: ecocash });
+  if (error) {
+    showMessage("cashupMessage", error.message, "error");
+    return;
+  }
+  document.getElementById("actualCashAmount").value = "";
+  document.getElementById("actualPosAmount").value = "";
+  const eco = document.getElementById("actualEcocashAmount");
+  if (eco) eco.value = "";
+  showMessage("cashupMessage", `Cashup recorded successfully for ${currency}. Supervisor can now conclude it.`);
+  await loadAll();
+  await refreshCashupReports();
+}
+
+async function concludeCashup(cashupId) {
+  if (!isSupervisor()) return;
+  const { data, error } = await supabaseClient.rpc("conclude_cashup_rpc", { p_cashup_id: cashupId });
+  if (error) {
+    showMessage("supervisorCashupMessage", error.message, "error");
+    return;
+  }
+  showMessage("supervisorCashupMessage", "Cashup concluded.");
+  if (data?.printout) printCashupReport(data.printout);
+  await loadAll();
+  await refreshCashupReports();
+}
+
+async function concludeAllCashups() {
+  if (!isSupervisor()) return;
+  const { data, error } = await supabaseClient.rpc("conclude_all_cashups_rpc", { p_currency: cashupCurrency() });
+  if (error) {
+    showMessage("supervisorCashupMessage", error.message, "error");
+    return;
+  }
+  showMessage("supervisorCashupMessage", `${data?.concluded_count || 0} cashup(s) concluded.`);
+  if (Array.isArray(data?.printouts) && data.printouts.length) printCashupReport({ batch: true, printouts: data.printouts, currency: cashupCurrency() });
+  await loadAll();
+  await refreshCashupReports();
+}
+
+function printCashupReport(printout) {
+  const reports = printout.batch ? printout.printouts : [printout];
+  const sections = reports.map(r => {
+    const currency = r.currency || "USD";
+    const productRows = (r.products || []).map(p => `<tr><td>${escapeHtml(p.product_name)}</td><td>${p.quantity}</td><td>${formatCurrency(p.total || 0, currency)}</td></tr>`).join("") || `<tr><td colspan="3">No product lines.</td></tr>`;
+    return `<section style="page-break-after:always">
+      <h2>Millet Electronics Cashup Report</h2>
+      <p><strong>Cashier:</strong> ${escapeHtml(r.cashier_name || "")}</p>
+      <p><strong>Date:</strong> ${escapeHtml(r.cashup_date || todayKey())} | <strong>Currency:</strong> ${escapeHtml(currency)}</p>
+      <h3>Money Collected</h3>
+      <table><tr><th>Payment Method</th><th>Amount</th></tr>
+      <tr><td>Cash</td><td>${formatCurrency(r.system_cash || 0, currency)}</td></tr>
+      <tr><td>POS (Swipe / EcoCash)</td><td>${formatCurrency(r.system_pos || 0, currency)}</td></tr>
+      <tr><td>Total</td><td>${formatCurrency(r.total_amount || 0, currency)}</td></tr></table>
+      <h3>Products Sold</h3>
+      <table><thead><tr><th>Product</th><th>Qty</th><th>Total</th></tr></thead><tbody>${productRows}</tbody></table>
+      <p><strong>Concluded by:</strong> ${escapeHtml(currentProfile?.full_name || currentUser?.email || "Supervisor")}</p>
+    </section>`;
+  }).join("");
+  const win = window.open("", "_blank", "width=820,height=900");
+  if (!win) return;
+  win.document.write(`<html><head><title>Cashup Printout</title><style>body{font-family:Arial;padding:20px}h2{color:#11385c}table{width:100%;border-collapse:collapse;margin-bottom:18px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f3f4f6}@media print{section{page-break-after:always}}</style></head><body>${sections}<script>setTimeout(()=>window.print(),400);<\/script></body></html>`);
+  win.document.close();
+}
+
+function fillDropdowns() {
+  const ids = ["saleProduct", "deductProduct", "stockTakeProduct", "priceProduct"];
+  ids.forEach(id => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    select.innerHTML = "";
+    if (id === "priceProduct") select.innerHTML = `<option value="">Select product</option>`;
+    products.forEach(p => {
+      const disabled = (id !== "priceProduct" && Number(p.quantity || 0) <= 0) ? "disabled" : "";
+      select.innerHTML += `<option value="${p.id}" ${disabled}>${escapeHtml(p.name)} — ${p.quantity} left — ${money(p.selling_price)}</option>`;
+    });
+  });
+  const receiveSelect = document.getElementById("productName");
+  if (receiveSelect) {
+    const currentValue = receiveSelect.value;
+    receiveSelect.innerHTML = `<option value="__new__">+ New product</option>`;
+    products.forEach(p => { receiveSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)} — ${p.quantity} left — ${money(p.selling_price)}</option>`; });
+    if (currentValue && Array.from(receiveSelect.options).some(o => o.value === currentValue)) receiveSelect.value = currentValue;
+    onProductNameInput();
+  }
+  if (document.getElementById("saleProduct")) onSaleProductChange();
+  if (document.getElementById("priceProduct")) onPriceProductChange();
+  renderReceipt();
+}
+
+function render() {
+  if (!currentUser || !currentProfile) return;
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("userInfo").textContent = `${currentProfile.full_name} — ${currentProfile.role}`;
+  document.querySelectorAll(".supervisor-only").forEach(el => el.classList.toggle("hidden", !isSupervisor()));
+  fillDropdowns();
+  const productCount = document.getElementById("productCount");
+  if (productCount) productCount.textContent = products.length;
+  const usdRate = document.getElementById("usdRate");
+  const zarRate = document.getElementById("usdZarRate");
+  const zwgRate = document.getElementById("usdZwgRate");
+  if (usdRate) usdRate.value = "1";
+  if (zarRate) zarRate.value = Number(settings.usd_zar || 1);
+  if (zwgRate) zwgRate.value = Number(settings.usd_zwg || 1);
+  const today = calculateReport("daily");
+  const todaySalesEl = document.getElementById("todaySales");
+  const todayProfitEl = document.getElementById("todayProfit");
+  const topProductEl = document.getElementById("topProduct");
+  if (todaySalesEl) todaySalesEl.textContent = money(today.revenue);
+  if (todayProfitEl) todayProfitEl.textContent = "Hidden";
+  if (topProductEl) topProductEl.textContent = today.topProduct;
+  const alerts = document.getElementById("alerts");
+  if (alerts) {
+    alerts.innerHTML = "";
+    products.forEach(p => { if (Number(p.quantity) <= Number(p.alert_level)) alerts.innerHTML += `<div class="alert">${escapeHtml(p.name)} has only ${p.quantity} left. Restock soon.</div>`; });
+    if (!alerts.innerHTML) alerts.innerHTML = `<div class="good">All products have enough stock.</div>`;
+  }
+  const stockTable = document.getElementById("stockTable");
+  if (stockTable) {
+    stockTable.innerHTML = "";
+    products.forEach(p => { stockTable.innerHTML += `<tr><td>${escapeHtml(p.name)}</td><td class="supervisor-only">${money(p.cost_price)}</td><td>${money(p.selling_price)}</td><td>${p.quantity}</td><td>${p.alert_level}</td></tr>`; });
+  }
+  renderReceipt();
+  renderPastelSyncStatus();
+  updatePastelPreview();
+  if (lastReportPeriod && isSupervisor()) showReport(lastReportPeriod);
+  renderMovementReports(lastMovementPeriod);
+  refreshCashupReports().catch(err => console.warn("cashup refresh failed", err));
+}

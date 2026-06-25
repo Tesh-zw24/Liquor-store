@@ -585,3 +585,24 @@ input:disabled {
     margin: 0;
   }
 }
+
+/* Requested controls update */
+.legacy-ecocash { display: none !important; }
+.transfer-box { margin-top: 10px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+.transfer-options { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.period-buttons { margin-bottom: 12px; }
+.movement-group { margin-top: 18px; }
+.movement-group h3 { color: #11385c; margin: 0 0 8px; }
+.cash-only-note { background: #fff7ed; color: #9a3412; padding: 8px 10px; border-radius: 8px; margin: 8px 0; }
+.compact-cashup-metrics { grid-template-columns: repeat(3, 1fr); }
+.receive-stock-grid { grid-template-columns: repeat(3, 1fr); }
+#salesPerformanceCard.hidden { display: none !important; }
+@media print {
+  .sidebar, .page-title, .nav-btn, .logout, button { display: none !important; }
+  .content { padding: 0 !important; }
+  .card { box-shadow: none !important; }
+}
+@media (max-width: 850px) {
+  .receive-stock-grid { grid-template-columns: 1fr; }
+  .transfer-options { display: block; }
+}

@@ -2877,10 +2877,8 @@ window.addEventListener("load", () => {
 });
 
 /* =========================
-   v1.5 split payments, receipt printing, quotation module
+   v1.5 split payments and receipt printing
    ========================= */
-let quoteItems = [];
-
 function saleCurrencyValue() {
   return document.getElementById("saleCurrency")?.value || "USD";
 }
@@ -3178,109 +3176,14 @@ printCashupReport = function (printout) {
   printHtmlDocument("Cashup Printout", html, 600);
 };
 
-/* Quotation module */
-function quoteCurrencyValue() { return document.getElementById("quoteCurrency")?.value || "USD"; }
-function quoteCurrencyRate() { return selectedCurrencyRate(quoteCurrencyValue()); }
-function quoteTotal() { return Number((quoteItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0) * quoteCurrencyRate()).toFixed(2)); }
-function quoteItemCount() { return quoteItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0); }
-
-function onQuoteProductChange() {
-  const product = getProductById(document.getElementById("quoteProduct")?.value);
-  const qtyInput = document.getElementById("quoteQuantity");
-  const hint = document.getElementById("quoteProductHint");
-  if (qtyInput) qtyInput.value = "1";
-  if (qtyInput && product) qtyInput.max = Number(product.quantity || 0);
-  if (hint) hint.textContent = product ? `${product.name}: ${product.quantity} available at ${money(product.selling_price)} each.` : "";
-}
-
-function handleQuoteQuantityKey(event) {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    addProductToQuote();
-  }
-}
-
-function addProductToQuote() {
-  const productId = document.getElementById("quoteProduct")?.value;
-  const quantity = Number(document.getElementById("quoteQuantity")?.value || 1);
-  const product = getProductById(productId);
-  if (!product) { showMessage("quoteMessage", "Select a product first.", "error"); return; }
-  if (!Number.isInteger(quantity) || quantity <= 0) { showMessage("quoteMessage", "Enter a valid quantity.", "error"); return; }
-  const existing = quoteItems.find(item => String(item.product_id) === String(product.id));
-  if (existing) {
-    existing.quantity += quantity;
-    existing.line_total = Number((existing.quantity * existing.unit_price).toFixed(2));
-  } else {
-    quoteItems.push({ product_id: product.id, product_name: product.name, quantity, unit_price: Number(product.selling_price || 0), line_total: Number((quantity * Number(product.selling_price || 0)).toFixed(2)) });
-  }
-  const q = document.getElementById("quoteQuantity");
-  if (q) q.value = "1";
-  const msg = document.getElementById("quoteMessage");
-  if (msg) msg.innerHTML = "";
-  renderQuote();
-}
-
-function removeQuoteItem(productId) {
-  quoteItems = quoteItems.filter(item => String(item.product_id) !== String(productId));
-  renderQuote();
-}
-
-function clearQuote() {
-  quoteItems = [];
-  renderQuote();
-  showMessage("quoteMessage", "Quotation cleared.");
-}
-
-function renderQuote() {
-  const table = document.getElementById("quoteItemsTable");
-  if (!table) return;
-  const currency = quoteCurrencyValue();
-  const rate = quoteCurrencyRate();
-  table.innerHTML = "";
-  quoteItems.forEach(item => {
-    table.innerHTML += `<tr><td>${escapeHtml(item.product_name)}</td><td>${item.quantity}</td><td>${formatCurrency(Number(item.unit_price || 0) * rate, currency)}</td><td>${formatCurrency(Number(item.line_total || 0) * rate, currency)}</td><td><button class="danger small-btn" onclick="removeQuoteItem('${item.product_id}')">Remove</button></td></tr>`;
-  });
-  if (!table.innerHTML) table.innerHTML = `<tr><td colspan="5">No products added to quotation yet.</td></tr>`;
-  const totalEl = document.getElementById("quoteGrandTotal");
-  const countEl = document.getElementById("quoteItemCount");
-  if (totalEl) totalEl.textContent = formatCurrency(quoteTotal(), currency);
-  if (countEl) countEl.textContent = quoteItemCount();
-}
-
-function quotationHtml() {
-  const currency = quoteCurrencyValue();
-  const rate = quoteCurrencyRate();
-  const quoteNo = "QTN-" + new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
-  const rows = quoteItems.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${item.quantity}</td><td>${formatCurrency(Number(item.unit_price || 0) * rate, currency)}</td><td>${formatCurrency(Number(item.line_total || 0) * rate, currency)}</td></tr>`).join("");
-  return `<!doctype html><html><head><title>Quotation ${quoteNo}</title><style>body{font-family:Arial;padding:22px;color:#111}h1,h2{color:#11385c;margin-bottom:4px}.muted{color:#666}.top{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #11385c;padding-bottom:12px;margin-bottom:18px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #ddd;padding:9px;text-align:left}th{background:#f3f4f6}.total{text-align:right;font-size:20px;margin-top:18px}.terms{margin-top:28px;font-size:13px;color:#444}.sign{margin-top:50px;border-top:1px solid #111;width:260px;padding-top:8px}@media print{button{display:none}}</style></head><body><div class="top"><div><h1>Liquor Republic</h1><div class="muted">Customer Quotation</div></div><div><strong>Quotation No:</strong> ${quoteNo}<br/><strong>Date:</strong> ${new Date().toLocaleDateString()}<br/><strong>Currency:</strong> ${currency}</div></div><table><thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="total"><strong>Total: ${formatCurrency(quoteTotal(), currency)}</strong></div><div class="terms"><strong>Note:</strong> This is a quotation only. Stock is not deducted until a sale is recorded. Prices are subject to availability and confirmation.</div><div class="sign">Authorised Signature</div></body></html>`;
-}
-
-function printQuotation() {
-  if (!quoteItems.length) { showMessage("quoteMessage", "Add products to the quotation first.", "error"); return; }
-  printHtmlDocument("Quotation", quotationHtml(), 600);
-}
-
 const fillDropdowns_before_v15 = fillDropdowns;
 fillDropdowns = function () {
   fillDropdowns_before_v15();
-  const quoteSelect = document.getElementById("quoteProduct");
-  if (quoteSelect) {
-    const currentValue = quoteSelect.value;
-    quoteSelect.innerHTML = "";
-    products.forEach(p => {
-      const disabled = Number(p.quantity || 0) <= 0 ? "disabled" : "";
-      quoteSelect.innerHTML += `<option value="${p.id}" ${disabled}>${escapeHtml(p.name)} — ${p.quantity} left — ${money(p.selling_price)}</option>`;
-    });
-    if (currentValue && Array.from(quoteSelect.options).some(o => o.value === currentValue)) quoteSelect.value = currentValue;
-    onQuoteProductChange();
-  }
-  renderQuote();
   onSaleCurrencyChange();
 };
 
 const openPanel_before_v15 = openPanel;
 openPanel = function (panelId) {
   openPanel_before_v15(panelId);
-  if (panelId === "quotationPanel") renderQuote();
   if (panelId === "salesPanel") onSaleCurrencyChange();
 };

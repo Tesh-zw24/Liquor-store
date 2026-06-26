@@ -738,7 +738,7 @@ body[data-role="cashier"] #dashboardPanel {
 }
 
 /* =========================
-   v1.5 split payments, background print, quotation module
+   v1.5 split payments and background print
    ========================= */
 #salesPanel.active-panel {
   grid-template-columns: 250px minmax(560px, 1fr) 380px;
@@ -772,26 +772,6 @@ body[data-role="cashier"] #dashboardPanel {
 
 #posEcoAmountLabel.disabled-method {
   opacity: 0.5;
-}
-
-.quotation-workspace {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-.quote-preview-card {
-  min-height: 520px;
-  display: flex;
-  flex-direction: column;
-}
-
-.quotation-table-wrap {
-  min-height: 350px;
-  max-height: 520px;
-  flex: 1 1 auto;
-  overflow-y: auto;
 }
 
 #printFrame {
@@ -832,5 +812,78 @@ body[data-role="cashier"] #dashboardPanel {
   }
   #salesPanel .receipt-card { height: auto; }
   #salesPanel .receipt-table-wrap { max-height: 420px; min-height: 260px; }
-  .quotation-workspace { grid-template-columns: 1fr; }
+}
+
+/* =========================
+   v1.6 Record Sale previous layout restore
+   Restores the old Record Sale arrangement:
+   Add Product panel full width at top, Current Receipt and Payment below.
+   ========================= */
+#salesPanel.active-panel {
+  display: block !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+#salesPanel .page-title {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  margin-bottom: 10px !important;
+}
+
+#salesPanel .sale-entry-card {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  align-self: initial !important;
+  width: auto !important;
+}
+
+#salesPanel .sale-workspace {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr) !important;
+  gap: 12px !important;
+  align-items: start !important;
+}
+
+#salesPanel .receipt-card,
+#salesPanel .payment-card {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+#salesPanel .receipt-card {
+  display: block !important;
+}
+
+#salesPanel .compact-sale-row {
+  grid-template-columns: minmax(380px, 1fr) 150px auto !important;
+  gap: 12px !important;
+  align-items: end !important;
+}
+
+#salesPanel .compact-sale-row .add-line-btn {
+  width: auto !important;
+  min-height: 40px !important;
+  margin: 0 0 4px 0 !important;
+  white-space: nowrap !important;
+}
+
+#salesPanel .receipt-table-wrap {
+  max-height: 245px !important;
+  min-height: 0 !important;
+  flex: initial !important;
+  overflow-y: auto !important;
+}
+
+@media (max-width: 1100px) {
+  #salesPanel .sale-workspace,
+  #salesPanel .compact-sale-row {
+    grid-template-columns: 1fr !important;
+  }
+  #salesPanel .compact-sale-row .add-line-btn {
+    width: 100% !important;
+    margin: 0 !important;
+  }
 }

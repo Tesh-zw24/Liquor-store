@@ -606,3 +606,133 @@ input:disabled {
   .receive-stock-grid { grid-template-columns: 1fr; }
   .transfer-options { display: block; }
 }
+
+/* =========================
+   Help & Updates + cashier workflow update
+   ========================= */
+.metrics.dashboard-metrics,
+#dashboardPanel .metrics {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+/* Cashier users should not see dashboard. JS sets body data-role after login. */
+body[data-role="cashier"] #dashboardNavBtn,
+body[data-role="cashier"] #dashboardPanel {
+  display: none !important;
+}
+
+#salesPanel.active-panel {
+  display: grid !important;
+  grid-template-columns: minmax(230px, 0.75fr) minmax(470px, 1.45fr) minmax(330px, 0.9fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+#salesPanel .page-title {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+#salesPanel .sale-entry-card {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+}
+
+#salesPanel .sale-workspace {
+  display: contents;
+}
+
+#salesPanel .receipt-card {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+#salesPanel .payment-card {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: start;
+}
+
+#salesPanel .compact-sale-row {
+  grid-template-columns: 1fr;
+}
+
+#salesPanel .compact-sale-row .add-line-btn {
+  width: 100%;
+}
+
+#salesPanel .receipt-table-wrap {
+  max-height: none;
+  min-height: 260px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.remove-qty-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.remove-qty-control input {
+  width: 68px;
+  padding: 6px 7px;
+  margin: 0;
+}
+
+.remove-qty-control button {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.help-card h2 {
+  color: #11385c;
+  margin-top: 0;
+}
+
+.help-card li {
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.version-card {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1250px) {
+  #salesPanel.active-panel {
+    height: auto;
+    overflow: visible;
+    grid-template-columns: 1fr;
+  }
+  #salesPanel .page-title,
+  #salesPanel .sale-entry-card,
+  #salesPanel .receipt-card,
+  #salesPanel .payment-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  #salesPanel .receipt-card { height: auto; }
+  #salesPanel .receipt-table-wrap { max-height: 360px; }
+}
+
+@media (max-width: 850px) {
+  .help-grid,
+  #dashboardPanel .metrics {
+    grid-template-columns: 1fr;
+  }
+}

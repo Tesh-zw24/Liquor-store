@@ -7,7 +7,7 @@ let settings = { monthly_rent: 0 };
 let pastelSyncJobs = [];
 let pastelSyncAvailable = true;
 let receiptItems = [];
-const PASTEL_SYNC_SOURCE = "millet-pos";
+const PASTEL_SYNC_SOURCE = "liquor-republic-pos";
 
 function money(value) {
   return "$" + Number(value || 0).toFixed(2);
@@ -770,7 +770,7 @@ function render() {
 /* =========================
    Sage Pastel CSV Integration
    =========================
-   This integration is designed for small shops that use Millet POS for daily
+   This integration is designed for small shops that use Liquor Republic POS for daily
    selling and Sage Pastel / Sage 50cloud Pastel for accounting.
 
    It does not write directly into the Pastel database. Instead it generates
@@ -824,7 +824,7 @@ function buildPastelSalePayload(sale) {
     lineTotalIncl: Number(revenue.toFixed(2)),
     lines: items,
     salesAccount: cfg.salesAccount || "4000/000",
-    reference: "Millet POS multi-item sale",
+    reference: "Liquor Republic POS multi-item sale",
     raw: sale
   };
 }
@@ -838,8 +838,8 @@ function buildPastelMovementPayload(movement) {
     itemCode: movement.product_id || movement.product_name,
     itemDescription: movement.product_name,
     quantityChange: Number(movement.quantity_change || 0),
-    reason: movement.reason || "Millet POS stock movement",
-    reference: "Millet POS real-time stock",
+    reason: movement.reason || "Liquor Republic POS stock movement",
+    reference: "Liquor Republic POS real-time stock",
     raw: movement
   };
 }
@@ -1063,7 +1063,7 @@ function buildPastelSalesInvoiceRows() {
       "0.00",
       revenue.toFixed(2),
       cfg.salesAccount,
-      "Millet POS sale"
+      "Liquor Republic POS sale"
     ]);
   });
 
@@ -1090,7 +1090,7 @@ function buildPastelDailyJournalRows() {
     pastelDate(cfg.toDate),
     reference,
     "1000/000",
-    "Cash / Bank control - Millet POS sales",
+    "Cash / Bank control - Liquor Republic POS sales",
     revenue.toFixed(2),
     "0.00",
     cfg.taxCode
@@ -1098,7 +1098,7 @@ function buildPastelDailyJournalRows() {
     pastelDate(cfg.toDate),
     reference,
     cfg.salesAccount,
-    "Sales revenue - Millet POS",
+    "Sales revenue - Liquor Republic POS",
     "0.00",
     revenue.toFixed(2),
     cfg.taxCode
@@ -1106,7 +1106,7 @@ function buildPastelDailyJournalRows() {
     pastelDate(cfg.toDate),
     reference,
     "5000/000",
-    "Cost of sales - Millet POS",
+    "Cost of sales - Liquor Republic POS",
     productCost.toFixed(2),
     "0.00",
     "0"
@@ -1114,7 +1114,7 @@ function buildPastelDailyJournalRows() {
     pastelDate(cfg.toDate),
     reference,
     "1300/000",
-    "Inventory control - Millet POS",
+    "Inventory control - Liquor Republic POS",
     "0.00",
     productCost.toFixed(2),
     "0"
@@ -1176,7 +1176,7 @@ function buildPastelStockMovementRows() {
       m.product_name,
       Number(m.quantity_change || 0),
       m.reason || "",
-      "Millet POS stock movement"
+      "Liquor Republic POS stock movement"
     ]);
   });
 
@@ -1199,7 +1199,7 @@ function validatePastelExport() {
 
 function pastelFileName(type) {
   const cfg = getPastelSettings();
-  return `millet-pastel-${type}-${cfg.fromDate}-to-${cfg.toDate}.csv`;
+  return `liquor-republic-pastel-${type}-${cfg.fromDate}-to-${cfg.toDate}.csv`;
 }
 
 function exportPastelSalesInvoices() {
@@ -1950,7 +1950,7 @@ function escapeHtml(value) {
 
 async function logout() {
   receiptItems = [];
-  try { sessionStorage.removeItem("millet_pending_receipt"); } catch (_) {}
+  try { sessionStorage.removeItem("liquor_republic_pending_receipt"); } catch (_) {}
   const amount = document.getElementById("amountReceived");
   if (amount) amount.value = "";
   await supabaseClient.auth.signOut();
@@ -2115,7 +2115,7 @@ function printTransferSlip(code, currency, items = receiptItems) {
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <style>body{font-family:Arial;padding:18px}h2{text-align:center}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ddd;padding:6px;text-align:left}.code{text-align:center;font-size:20px;font-weight:bold;margin:10px 0}.muted{color:#666;text-align:center}</style>
     </head><body>
-      <h2>Millet Electronics</h2>
+      <h2>Liquor Republic</h2>
       <p class="muted">Transfer Transaction</p>
       <div class="code">${escapeHtml(code)}</div>
       <svg id="barcode"></svg>
@@ -2548,7 +2548,7 @@ function printCashupReport(printout) {
     const currency = r.currency || "USD";
     const productRows = (r.products || []).map(p => `<tr><td>${escapeHtml(p.product_name)}</td><td>${p.quantity}</td><td>${formatCurrency(p.total || 0, currency)}</td></tr>`).join("") || `<tr><td colspan="3">No product lines.</td></tr>`;
     return `<section style="page-break-after:always">
-      <h2>Millet Electronics Cashup Report</h2>
+      <h2>Liquor Republic Cashup Report</h2>
       <p><strong>Cashier:</strong> ${escapeHtml(r.cashier_name || "")}</p>
       <p><strong>Date:</strong> ${escapeHtml(r.cashup_date || todayKey())} | <strong>Currency:</strong> ${escapeHtml(currency)}</p>
       <h3>Money Collected</h3>
@@ -2632,3 +2632,246 @@ function render() {
   renderMovementReports(lastMovementPeriod);
   refreshCashupReports().catch(err => console.warn("cashup refresh failed", err));
 }
+
+/* =========================
+   2026-06-26 Help & Updates + cashier workflow final overrides
+   ========================= */
+function clearLoginCredentials() {
+  const email = document.getElementById("email");
+  const password = document.getElementById("password");
+  if (email) {
+    email.value = "";
+    email.setAttribute("autocomplete", "off");
+    email.setAttribute("data-lpignore", "true");
+  }
+  if (password) {
+    password.value = "";
+    password.setAttribute("autocomplete", "new-password");
+    password.setAttribute("data-lpignore", "true");
+  }
+}
+
+
+function clearLoginCredentialsIfIdle() {
+  const activeId = document.activeElement?.id || "";
+  if (activeId === "email" || activeId === "password") return;
+  clearLoginCredentials();
+}
+
+const login_before_help_update_20260626 = login;
+login = async function () {
+  receiptItems = [];
+  await login_before_help_update_20260626();
+  if (currentUser && currentProfile && !isSupervisor()) {
+    openPanel("salesPanel");
+  }
+};
+
+logout = async function () {
+  receiptItems = [];
+  try { sessionStorage.removeItem("liquor_republic_pending_receipt"); } catch (_) {}
+  const amount = document.getElementById("amountReceived");
+  if (amount) amount.value = "";
+  renderReceipt();
+  await supabaseClient.auth.signOut();
+  currentUser = null;
+  currentProfile = null;
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("app").classList.add("hidden");
+  clearLoginCredentials();
+  setTimeout(clearLoginCredentialsIfIdle, 150);
+  setTimeout(clearLoginCredentialsIfIdle, 700);
+};
+
+addProductToReceipt = function () {
+  const productId = document.getElementById("saleProduct").value;
+  const quantity = Number(document.getElementById("saleQuantity").value || 1);
+  const product = getProductById(productId);
+
+  if (!product) {
+    showMessage("saleMessage", "Select a product first.", "error");
+    return;
+  }
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    showMessage("saleMessage", "Enter a valid quantity.", "error");
+    return;
+  }
+  if (!Number.isInteger(quantity)) {
+    showMessage("saleMessage", "Quantity must be a whole number.", "error");
+    return;
+  }
+
+  const existing = receiptItems.find(item => String(item.product_id) === String(product.id));
+  const currentReceiptQty = existing ? Number(existing.quantity || 0) : 0;
+  const requestedTotalQty = currentReceiptQty + quantity;
+  const stockAvailable = Number(product.quantity || 0);
+
+  if (requestedTotalQty > stockAvailable) {
+    showMessage("saleMessage", `Insufficient stock. ${escapeHtml(product.name)} has only ${stockAvailable} available.`, "error");
+    return;
+  }
+
+  if (existing) {
+    existing.quantity = requestedTotalQty;
+    existing.line_total = Number((existing.quantity * existing.unit_price).toFixed(2));
+  } else {
+    receiptItems.push({
+      product_id: product.id,
+      product_name: product.name,
+      quantity,
+      unit_price: Number(product.selling_price || 0),
+      cost_price: Number(product.cost_price || 0),
+      vat_rate: Number(product.vat_rate || 15),
+      line_total: Number((quantity * Number(product.selling_price || 0)).toFixed(2))
+    });
+  }
+
+  document.getElementById("saleQuantity").value = "1";
+  const msg = document.getElementById("saleMessage");
+  if (msg) msg.innerHTML = "";
+  renderReceipt();
+};
+
+function removeReceiptQty(productId) {
+  const item = receiptItems.find(line => String(line.product_id) === String(productId));
+  if (!item) return;
+  const inputId = `removeQty_${String(productId).replaceAll("-", "_")}`;
+  const qty = Number(document.getElementById(inputId)?.value || 1);
+  if (!Number.isInteger(qty) || qty <= 0) {
+    showMessage("saleMessage", "Enter a valid quantity to remove.", "error");
+    return;
+  }
+  if (qty >= Number(item.quantity || 0)) {
+    receiptItems = receiptItems.filter(line => String(line.product_id) !== String(productId));
+  } else {
+    item.quantity = Number(item.quantity || 0) - qty;
+    item.line_total = Number((item.quantity * item.unit_price).toFixed(2));
+  }
+  renderReceipt();
+}
+
+renderReceipt = function () {
+  const table = document.getElementById("receiptItemsTable");
+  if (!table) return;
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const rate = selectedCurrencyRate(currency);
+  table.innerHTML = "";
+
+  receiptItems.forEach(item => {
+    const safeId = String(item.product_id).replaceAll("-", "_");
+    table.innerHTML += `
+      <tr>
+        <td>${escapeHtml(item.product_name)}</td>
+        <td>${item.quantity}</td>
+        <td>${formatCurrency(Number(item.unit_price || 0) * rate, currency)}</td>
+        <td>${formatCurrency(Number(item.line_total || 0) * rate, currency)}</td>
+        <td>
+          <div class="remove-qty-control">
+            <input id="removeQty_${safeId}" type="number" min="1" max="${Number(item.quantity || 1)}" step="1" value="1" title="Quantity to remove" />
+            <button class="danger small-btn" onclick="removeReceiptQty('${item.product_id}')">Remove Qty</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  if (!table.innerHTML) {
+    table.innerHTML = `<tr><td colspan="5">No products added yet. Select a product and press Enter or Add.</td></tr>`;
+  }
+  updateReceiptTotals();
+};
+
+recordSale = async function () {
+  if (!validatePayment()) return;
+
+  const currency = document.getElementById("saleCurrency")?.value || "USD";
+  const paymentMethod = document.getElementById("paymentMethod")?.value || "CASH";
+  const amountReceived = Number(document.getElementById("amountReceived")?.value || 0);
+
+  const { data, error } = await supabaseClient.rpc("record_invoice_sale_rpc", {
+    p_items: receiptItems.map(item => ({ product_id: item.product_id, quantity: item.quantity })),
+    p_currency: currency,
+    p_payment_method: paymentMethod,
+    p_amount_received: amountReceived
+  });
+
+  if (error) {
+    showMessage("saleMessage", error.message, "error");
+    return;
+  }
+
+  const total = receiptTotal();
+  const change = paymentMethod === "CASH" && amountReceived > total ? amountReceived - total : 0;
+  const result = data || {};
+  receiptItems = [];
+  const amountBox = document.getElementById("amountReceived");
+  if (amountBox) amountBox.value = "";
+  renderReceipt();
+  await loadAll();
+
+  const saleId = typeof result === "string" ? result : (result.sale_id || result.invoice_id || result.id);
+  const recordedSale = sales.find(s => String(s.id) === String(saleId)) || sales[0];
+  if (recordedSale) {
+    await enqueuePastelSync("sale_invoice", "sales", recordedSale.id || `${recordedSale.created_at}-${recordedSale.product_id}`, buildPastelSalePayload(recordedSale));
+    await loadPastelSyncJobs();
+  }
+
+  showMessage("saleMessage", `Transaction successful.${change > 0 ? ` Change: ${currencyPrefix(currency)}${change.toFixed(2)}.` : ""}`);
+  render();
+  await refreshCashupReports();
+};
+
+showReport = function (period) {
+  lastReportPeriod = period;
+  const report = calculateReport(period);
+  const reportEl = document.getElementById("report");
+  if (!reportEl) return;
+  reportEl.innerHTML = `
+    <h3>${period.charAt(0).toUpperCase() + period.slice(1)} Report</h3>
+    <div class="metrics report-metrics">
+      <div class="metric">Sales Revenue<strong>${money(report.revenue)}</strong></div>
+      <div class="metric">Most Sought Products<strong>${escapeHtml(report.topProduct)}</strong></div>
+      <div class="metric">Number of Sales<strong>${report.numberOfSales}</strong></div>
+    </div>
+  `;
+};
+
+const render_before_help_update_20260626 = render;
+render = function () {
+  render_before_help_update_20260626();
+  if (!currentUser || !currentProfile) return;
+
+  document.body.dataset.role = isSupervisor() ? "supervisor" : "cashier";
+  const dashboardNav = document.getElementById("dashboardNavBtn");
+  if (dashboardNav) dashboardNav.classList.toggle("hidden", !isSupervisor());
+
+  const dashboardPanel = document.getElementById("dashboardPanel");
+  if (!isSupervisor() && dashboardPanel?.classList.contains("active-panel")) {
+    openPanel("salesPanel");
+  }
+
+  const todayProfit = document.getElementById("todayProfit");
+  if (todayProfit) todayProfit.closest(".metric")?.remove();
+  const topProduct = document.getElementById("topProduct");
+  if (topProduct) topProduct.closest(".metric")?.remove();
+
+  const stockTable = document.getElementById("stockTable");
+  if (stockTable) {
+    stockTable.innerHTML = "";
+    products.forEach(p => {
+      stockTable.innerHTML += `<tr><td>${escapeHtml(p.name)}</td><td>${money(p.selling_price)}</td><td>${p.quantity}</td><td>${p.alert_level}</td></tr>`;
+    });
+  }
+
+  if (lastReportPeriod && isSupervisor()) showReport(lastReportPeriod);
+};
+
+window.addEventListener("load", () => {
+  if (!currentUser) {
+    clearLoginCredentials();
+    setTimeout(clearLoginCredentialsIfIdle, 250);
+    setTimeout(clearLoginCredentialsIfIdle, 1000);
+  } else {
+    render();
+  }
+});

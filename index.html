@@ -3,20 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Millet Electronics POS</title>
+  <title>Liquor Republic POS</title>
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
     <div class="login-card">
-      <img src="assets/millet-logo.jpeg" alt="Millet Electronics" class="login-logo" />
-      <h1>Millet Electronics POS</h1>
+      <img src="assets/millet-logo.jpeg" alt="Liquor Republic" class="login-logo" />
+      <h1>Liquor Republic POS</h1>
       <p>Sign in to continue</p>
       <label>Email
-        <input id="email" type="email" autocomplete="email" placeholder="email@example.com" />
+        <input id="email" name="lr_email_20260626" type="email" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" placeholder="email@example.com" />
       </label>
       <label>Password
-        <input id="password" type="password" autocomplete="current-password" placeholder="Password" onkeydown="if(event.key==='Enter') login()" />
+        <input id="password" name="lr_password_20260626" type="password" autocomplete="new-password" data-lpignore="true" placeholder="Password" onkeydown="if(event.key==='Enter') login()" />
       </label>
       <button onclick="login()">Login</button>
       <div id="loginMessage"></div>
@@ -26,13 +26,13 @@
   <div id="app" class="app-shell hidden">
     <aside class="sidebar">
       <div class="brand">
-        <img src="assets/millet-logo.jpeg" alt="Millet Electronics" class="sidebar-logo" />
-        <h2>Millet Electronics</h2>
+        <img src="assets/millet-logo.jpeg" alt="Liquor Republic" class="sidebar-logo" />
+        <h2>Liquor Republic</h2>
         <p id="userInfo">User</p>
       </div>
 
       <nav class="side-nav">
-        <button class="nav-btn active" onclick="openPanel('dashboardPanel')">Dashboard</button>
+        <button id="dashboardNavBtn" class="nav-btn active" onclick="openPanel('dashboardPanel')">Dashboard</button>
         <button class="nav-btn" onclick="openPanel('salesPanel')">Record Sale</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('cancelPanel')">Cancel Transaction</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('stockPanel')">Add / Receive Stock</button>
@@ -42,6 +42,7 @@
         <button class="nav-btn supervisor-only" onclick="openPanel('pastelPanel')">Pastel Auto Sync</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('movementsPanel')">Stock Movements</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('settingsPanel')">Settings</button>
+        <button class="nav-btn" onclick="openPanel('helpPanel')">Help &amp; Updates</button>
         <button class="nav-btn" onclick="openPanel('passwordPanel')">User Administration</button>
         <button class="logout" onclick="logout()">Logout</button>
       </nav>
@@ -51,13 +52,11 @@
       <section id="dashboardPanel" class="panel active-panel">
         <div class="page-title">
           <h1>Dashboard</h1>
-          <p>Live sales, stock alerts, and performance summary.</p>
+          <p>Supervisor stock overview and sales summary.</p>
         </div>
         <div class="metrics">
           <div class="metric">Products<strong id="productCount">0</strong></div>
           <div class="metric">Today Sales<strong id="todaySales">$0.00</strong></div>
-          <div class="metric">Today Profit<strong id="todayProfit">$0.00</strong></div>
-          <div class="metric">Top Product<strong id="topProduct">No sales yet</strong></div>
         </div>
         <div class="card">
           <h2>Low Stock Alerts</h2>
@@ -67,7 +66,7 @@
           <h2>Current Stock</h2>
           <table>
             <thead>
-              <tr><th>Product</th><th>Cost</th><th>Selling</th><th>Qty</th><th>Alert Level</th></tr>
+              <tr><th>Product</th><th>Selling</th><th>Qty</th><th>Alert Level</th></tr>
             </thead>
             <tbody id="stockTable"></tbody>
           </table>
@@ -396,6 +395,70 @@
           </div>
           <button onclick="updateRates()">Update Rates</button>
           <div id="rateSettingsMessage"></div>
+        </div>
+      </section>
+
+
+      <section id="helpPanel" class="panel">
+        <div class="page-title">
+          <h1>Help &amp; Updates</h1>
+          <p>System changes, new functionality, and quick instructions for cashiers and supervisors.</p>
+        </div>
+
+        <div class="help-grid">
+          <div class="card help-card">
+            <h2>New Features</h2>
+            <ul>
+              <li><strong>Transfer Transaction:</strong> a cashier can transfer an unpaid receipt to another cashier when there is a change problem.</li>
+              <li><strong>Help &amp; Updates:</strong> this panel now explains every new update and how users should use it.</li>
+              <li><strong>Remove Quantity:</strong> items can now be removed from the receipt by selected quantity instead of removing the whole line only.</li>
+              <li><strong>Cashup Printout:</strong> concluded cashups print money collected, payment methods, products sold, and quantities.</li>
+            </ul>
+          </div>
+
+          <div class="card help-card">
+            <h2>System Changes</h2>
+            <ul>
+              <li>Cashiers now open directly on <strong>Record Sale</strong>; dashboard is hidden for cashier users.</li>
+              <li>The login form is cleared after logout so the next user must enter their own credentials.</li>
+              <li>The Record Sale screen was reorganised so product entry is on the left, the receipt is in the middle, and payment is on the right.</li>
+              <li>Sales completion message now shows <strong>Transaction successful</strong> only.</li>
+              <li>Dashboard profit and top-product cards were removed.</li>
+            </ul>
+          </div>
+
+          <div class="card help-card">
+            <h2>How to Use</h2>
+            <ol>
+              <li><strong>Record a sale:</strong> select product, enter quantity, click Add / Enter, then repeat until the receipt is complete.</li>
+              <li><strong>Remove quantity:</strong> type the quantity to remove on the receipt line and click Remove Qty. Default is 1.</li>
+              <li><strong>Transfer a transaction:</strong> click Transfer Transaction, choose Transfer Transaction, print the barcode slip, and give it to the other cashier.</li>
+              <li><strong>Receive a transaction:</strong> click Transfer Transaction, choose Receive Transaction, then scan or type the transfer code. The invoice appears on the current receipt.</li>
+              <li><strong>Cashup:</strong> select currency, check system totals per payment method, enter actual counted amounts, and record cashup.</li>
+            </ol>
+          </div>
+
+          <div class="card help-card">
+            <h2>Important Notices</h2>
+            <ul>
+              <li>ZAR payments are cash only. POS (Swipe / EcoCash) is disabled for ZAR.</li>
+              <li>Supervisor password is required for stock deduction, stock take, product price changes, rate changes, and transaction cancellation.</li>
+              <li>A supervisor cannot conclude their own cashup; another supervisor must conclude it.</li>
+              <li>When a user logs out, any unfinished receipt is cleared automatically.</li>
+            </ul>
+          </div>
+
+          <div class="card help-card version-card">
+            <h2>Version History</h2>
+            <table>
+              <thead><tr><th>Version</th><th>Date</th><th>Changes</th></tr></thead>
+              <tbody>
+                <tr><td>v1.4</td><td>26 June 2026</td><td>Help &amp; Updates, cashier dashboard hidden, receipt quantity removal, compact sales layout, clearer transaction success messages, login cleanup, and transfer-code fix.</td></tr>
+                <tr><td>v1.3</td><td>26 June 2026</td><td>Cancel transaction, transfer transaction, grouped stock movements, POS (Swipe / EcoCash), ZAR cash-only, and cashup printouts.</td></tr>
+                <tr><td>v1.2</td><td>24 June 2026</td><td>Multi-product receipt sales, currency selection, payment validation, cashup reports, product price changes, and currency-rate updates.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

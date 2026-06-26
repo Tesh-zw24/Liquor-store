@@ -34,6 +34,7 @@
       <nav class="side-nav">
         <button id="dashboardNavBtn" class="nav-btn active" onclick="openPanel('dashboardPanel')">Dashboard</button>
         <button class="nav-btn" onclick="openPanel('salesPanel')">Record Sale</button>
+        <button class="nav-btn" onclick="openPanel('quotationPanel')">Do Quotation</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('cancelPanel')">Cancel Transaction</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('stockPanel')">Add / Receive Stock</button>
         <button class="nav-btn supervisor-only" onclick="openPanel('deductPanel')">Deduct Stock</button>
@@ -121,7 +122,7 @@
 
           <div class="card payment-card compact-card">
             <h2>Payment</h2>
-            <div class="payment-grid">
+            <div class="payment-grid split-payment-grid">
               <label>Currency
                 <select id="saleCurrency" onchange="onSaleCurrencyChange()">
                   <option value="USD" selected>USD</option>
@@ -129,15 +130,14 @@
                   <option value="ZWG">ZWG</option>
                 </select>
               </label>
-              <label>Payment Method
-                <select id="paymentMethod" onchange="onPaymentMethodChange()">
-                  <option value="CASH" selected>CASH</option>
-                  <option value="POS_ECOCASH">POS (Swipe / EcoCash)</option>
-                </select>
+              <label>Cash Amount
+                <input id="cashAmountReceived" type="number" min="0" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()" />
               </label>
-              <label>Amount Received
-                <input id="amountReceived" type="number" min="0" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()" />
+              <label id="posEcoAmountLabel">POS (Swipe / EcoCash) Amount
+                <input id="posEcoAmountReceived" type="number" min="0" step="0.01" placeholder="0.00" oninput="updatePaymentPreview()" />
               </label>
+              <input id="amountReceived" type="hidden" value="0" />
+              <input id="paymentMethod" type="hidden" value="CASH" />
             </div>
             <div class="payment-metrics compact-payment-metrics">
               <div class="metric compact-metric">Total<strong id="paymentTotal">$0.00</strong></div>
@@ -148,6 +148,52 @@
           </div>
         </div>
 
+      </section>
+
+      <section id="quotationPanel" class="panel quotation-panel-layout">
+        <div class="page-title compact-title">
+          <h1>Do Quotation</h1>
+          <p>Create a quotation for a customer without deducting stock.</p>
+        </div>
+        <div class="quotation-workspace">
+          <div class="card quote-entry-card compact-card">
+            <h2>Add Product to Quotation</h2>
+            <label>Currency
+              <select id="quoteCurrency" onchange="renderQuote()">
+                <option value="USD" selected>USD</option>
+                <option value="ZAR">ZAR</option>
+                <option value="ZWG">ZWG</option>
+              </select>
+            </label>
+            <label>Product
+              <select id="quoteProduct" onchange="onQuoteProductChange()"></select>
+            </label>
+            <label>Quantity
+              <input id="quoteQuantity" type="number" min="1" step="1" value="1" onkeydown="handleQuoteQuantityKey(event)" />
+            </label>
+            <p id="quoteProductHint" class="muted compact-hint"></p>
+            <button class="add-line-btn" onclick="addProductToQuote()">Add to Quotation</button>
+            <button class="small-btn danger" onclick="clearQuote()">Clear Quotation</button>
+            <button class="small-btn" onclick="printQuotation()">Print Quotation</button>
+            <div id="quoteMessage"></div>
+          </div>
+
+          <div class="card quote-preview-card compact-card">
+            <h2>Quotation Preview</h2>
+            <div class="receipt-table-wrap quotation-table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Action</th></tr>
+                </thead>
+                <tbody id="quoteItemsTable"></tbody>
+              </table>
+            </div>
+            <div class="receipt-summary compact-summary">
+              <div class="metric compact-metric">Quotation Total<strong id="quoteGrandTotal">$0.00</strong></div>
+              <div class="metric compact-metric">Items<strong id="quoteItemCount">0</strong></div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section id="cancelPanel" class="panel">
@@ -409,42 +455,44 @@
           <div class="card help-card">
             <h2>New Features</h2>
             <ul>
-              <li><strong>Transfer Transaction:</strong> a cashier can transfer an unpaid receipt to another cashier when there is a change problem.</li>
-              <li><strong>Help &amp; Updates:</strong> this panel now explains every new update and how users should use it.</li>
-              <li><strong>Remove Quantity:</strong> items can now be removed from the receipt by selected quantity instead of removing the whole line only.</li>
-              <li><strong>Cashup Printout:</strong> concluded cashups print money collected, payment methods, products sold, and quantities.</li>
+              <li><strong>Split Payment:</strong> USD and ZWG sales can now be paid using cash and POS (Swipe / EcoCash) together on the same receipt.</li>
+              <li><strong>Automatic Receipt Printing:</strong> completed sales now send a receipt print command with sale details and a fiscalisation QR-code area at the bottom.</li>
+              <li><strong>Transfer Receipt Printing:</strong> transferred transactions print the barcode receipt in the background instead of opening a separate print screen.</li>
+              <li><strong>Do Quotation:</strong> both cashiers and supervisors can prepare and print quotations without deducting stock.</li>
+              <li><strong>Cashup Signatures:</strong> cashup printouts now include cashier and supervisor signature spaces.</li>
             </ul>
           </div>
 
           <div class="card help-card">
             <h2>System Changes</h2>
             <ul>
-              <li>Cashiers now open directly on <strong>Record Sale</strong>; dashboard is hidden for cashier users.</li>
-              <li>The login form is cleared after logout so the next user must enter their own credentials.</li>
-              <li>The Record Sale screen was reorganised so product entry is on the left, the receipt is in the middle, and payment is on the right.</li>
-              <li>Sales completion message now shows <strong>Transaction successful</strong> only.</li>
-              <li>Dashboard profit and top-product cards were removed.</li>
+              <li>Cashier users no longer see the dashboard panel; they start directly from Record Sale.</li>
+              <li>The Record Sale layout was widened so the current receipt has more room for many products.</li>
+              <li>ZAR remains cash only; USD and ZWG allow split payment by cash and POS (Swipe / EcoCash).</li>
+              <li>Transaction success now displays a simple success message and then prints the receipt.</li>
+              <li>Quotations do not reduce stock and do not create sales until the cashier records an actual transaction.</li>
             </ul>
           </div>
 
           <div class="card help-card">
             <h2>How to Use</h2>
             <ol>
-              <li><strong>Record a sale:</strong> select product, enter quantity, click Add / Enter, then repeat until the receipt is complete.</li>
-              <li><strong>Remove quantity:</strong> type the quantity to remove on the receipt line and click Remove Qty. Default is 1.</li>
-              <li><strong>Transfer a transaction:</strong> click Transfer Transaction, choose Transfer Transaction, print the barcode slip, and give it to the other cashier.</li>
-              <li><strong>Receive a transaction:</strong> click Transfer Transaction, choose Receive Transaction, then scan or type the transfer code. The invoice appears on the current receipt.</li>
-              <li><strong>Cashup:</strong> select currency, check system totals per payment method, enter actual counted amounts, and record cashup.</li>
+              <li><strong>Record sale:</strong> select product, enter quantity, click Add / Enter, then repeat for all products.</li>
+              <li><strong>Split payment:</strong> choose USD or ZWG, enter the cash amount and POS (Swipe / EcoCash) amount, then click Record Sale. The combined amount must cover the receipt total.</li>
+              <li><strong>ZAR sale:</strong> choose ZAR and enter cash only. POS / EcoCash is disabled for ZAR.</li>
+              <li><strong>Transfer transaction:</strong> click Transfer Transaction, choose Transfer Transaction, and the barcode slip prints automatically. The receiving cashier scans or types the code under Receive Transaction.</li>
+              <li><strong>Do quotation:</strong> open Do Quotation, add products, choose currency, then print the quotation for the customer.</li>
+              <li><strong>Cashup:</strong> select currency, compare system totals against counted money, record cashup, then another supervisor concludes and signs the printout.</li>
             </ol>
           </div>
 
           <div class="card help-card">
             <h2>Important Notices</h2>
             <ul>
-              <li>ZAR payments are cash only. POS (Swipe / EcoCash) is disabled for ZAR.</li>
-              <li>Supervisor password is required for stock deduction, stock take, product price changes, rate changes, and transaction cancellation.</li>
-              <li>A supervisor cannot conclude their own cashup; another supervisor must conclude it.</li>
-              <li>When a user logs out, any unfinished receipt is cleared automatically.</li>
+              <li>Normal browsers may still show the system print dialog unless the till computer is configured for kiosk/silent printing.</li>
+              <li>The fiscalisation QR area is ready for ZIMRA integration. Once the real ZIMRA response is connected, the official fiscal QR data should be passed into the receipt.</li>
+              <li>A supervisor cannot conclude their own cashup; another supervisor must conclude and sign it.</li>
+              <li>Always run the latest Supabase SQL patch before uploading the new POS files.</li>
             </ul>
           </div>
 
@@ -453,7 +501,8 @@
             <table>
               <thead><tr><th>Version</th><th>Date</th><th>Changes</th></tr></thead>
               <tbody>
-                <tr><td>v1.4</td><td>26 June 2026</td><td>Help &amp; Updates, cashier dashboard hidden, receipt quantity removal, compact sales layout, clearer transaction success messages, login cleanup, and transfer-code fix.</td></tr>
+                <tr><td>v1.5</td><td>26 June 2026</td><td>Split payments for USD/ZWG, automatic receipt printing, fiscal QR-code receipt area, quotation module, transfer barcode background print, and cashup signature lines.</td></tr>
+                <tr><td>v1.4</td><td>26 June 2026</td><td>Help &amp; Updates, cashier dashboard hidden, receipt quantity removal, compact sales layout, login cleanup, and transfer-code fix.</td></tr>
                 <tr><td>v1.3</td><td>26 June 2026</td><td>Cancel transaction, transfer transaction, grouped stock movements, POS (Swipe / EcoCash), ZAR cash-only, and cashup printouts.</td></tr>
                 <tr><td>v1.2</td><td>24 June 2026</td><td>Multi-product receipt sales, currency selection, payment validation, cashup reports, product price changes, and currency-rate updates.</td></tr>
               </tbody>

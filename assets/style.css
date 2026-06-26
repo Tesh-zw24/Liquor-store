@@ -736,3 +736,101 @@ body[data-role="cashier"] #dashboardPanel {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================
+   v1.5 split payments, background print, quotation module
+   ========================= */
+#salesPanel.active-panel {
+  grid-template-columns: 250px minmax(560px, 1fr) 380px;
+  gap: 10px;
+}
+
+#salesPanel .sale-entry-card {
+  padding: 12px;
+}
+
+#salesPanel .receipt-card {
+  min-width: 0;
+}
+
+#salesPanel .receipt-table-wrap {
+  min-height: 390px;
+}
+
+.split-payment-grid label {
+  margin-bottom: 6px;
+}
+
+.payment-note {
+  background: #eff6ff;
+  color: #1e3a8a;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+#posEcoAmountLabel.disabled-method {
+  opacity: 0.5;
+}
+
+.quotation-workspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.quote-preview-card {
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+}
+
+.quotation-table-wrap {
+  min-height: 350px;
+  max-height: 520px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+#printFrame {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border: 0;
+  visibility: hidden;
+}
+
+.signature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 26px;
+  margin-top: 28px;
+}
+
+.signature-line {
+  border-top: 1px solid #111;
+  padding-top: 8px;
+  min-height: 44px;
+}
+
+@media (max-width: 1300px) {
+  #salesPanel.active-panel {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+  #salesPanel .page-title,
+  #salesPanel .sale-entry-card,
+  #salesPanel .receipt-card,
+  #salesPanel .payment-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  #salesPanel .receipt-card { height: auto; }
+  #salesPanel .receipt-table-wrap { max-height: 420px; min-height: 260px; }
+  .quotation-workspace { grid-template-columns: 1fr; }
+}

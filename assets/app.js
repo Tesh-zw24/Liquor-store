@@ -2875,3 +2875,412 @@ window.addEventListener("load", () => {
     render();
   }
 });
+
+/* =========================
+   v1.5 split payments, receipt printing, quotation module
+   ========================= */
+let quoteItems = [];
+
+function saleCurrencyValue() {
+  return document.getElementById("saleCurrency")?.value || "USD";
+}
+
+function safeMoneyInput(id) {
+  const value = Number(document.getElementById(id)?.value || 0);
+  return Number.isFinite(value) && value > 0 ? Number(value.toFixed(2)) : 0;
+}
+
+function setMoneyInput(id, value) {
+  const input = document.getElementById(id);
+  if (input) input.value = Number(value || 0).toFixed(2);
+}
+
+function getPaymentBreakdown() {
+  const currency = saleCurrencyValue();
+  const cash = safeMoneyInput("cashAmountReceived");
+  let posEco = safeMoneyInput("posEcoAmountReceived");
+  if (currency === "ZAR") posEco = 0;
+  const received = Number((cash + posEco).toFixed(2));
+  const total = receiptTotal();
+  const cashNeeded = Math.max(0, Number((total - posEco).toFixed(2)));
+  const change = cash > cashNeeded ? Number((cash - cashNeeded).toFixed(2)) : 0;
+  return { currency, cash, posEco, ecocash: 0, received, total, change, cashNeeded };
+}
+
+function splitPaymentMethodLabel(breakdown = getPaymentBreakdown()) {
+  const hasCash = breakdown.cash > 0;
+  const hasPos = breakdown.posEco > 0;
+  if (hasCash && hasPos) return "CASH + POS (Swipe / EcoCash)";
+  if (hasPos) return "POS (Swipe / EcoCash)";
+  return "CASH";
+}
+
+function syncLegacyPaymentFields() {
+  const breakdown = getPaymentBreakdown();
+  const amount = document.getElementById("amountReceived");
+  const method = document.getElementById("paymentMethod");
+  if (amount) amount.value = breakdown.received.toFixed(2);
+  if (method) method.value = splitPaymentMethodLabel(breakdown);
+}
+
+onPaymentMethodChange = function () {
+  updatePaymentPreview();
+};
+
+onSaleCurrencyChange = function () {
+  const currency = saleCurrencyValue();
+  const posLabel = document.getElementById("posEcoAmountLabel");
+  const posInput = document.getElementById("posEcoAmountReceived");
+  if (posInput) {
+    posInput.disabled = currency === "ZAR";
+    if (currency === "ZAR") posInput.value = "0.00";
+  }
+  if (posLabel) posLabel.classList.toggle("disabled-method", currency === "ZAR");
+  renderReceipt();
+  updatePaymentPreview();
+};
+
+updatePaymentPreview = function () {
+  const breakdown = getPaymentBreakdown();
+  const currency = breakdown.currency;
+  const amountEl = document.getElementById("paymentAmountReceived");
+  const changeEl = document.getElementById("paymentChange");
+  const totalEl = document.getElementById("paymentTotal");
+  if (totalEl) totalEl.textContent = formatCurrency(breakdown.total, currency);
+  if (amountEl) amountEl.textContent = formatCurrency(breakdown.received, currency);
+  if (changeEl) changeEl.textContent = formatCurrency(breakdown.change, currency);
+  syncLegacyPaymentFields();
+};
+
+validatePayment = function () {
+  const breakdown = getPaymentBreakdown();
+  if (receiptItems.length === 0) {
+    showMessage("saleMessage", "Add at least one product to the receipt first.", "error");
+    return false;
+  }
+  if (breakdown.currency === "ZAR" && breakdown.posEco > 0) {
+    showMessage("saleMessage", "ZAR is cash only. POS / EcoCash is disabled for ZAR.", "error");
+    return false;
+  }
+  if (breakdown.received <= 0) {
+    showMessage("saleMessage", "Enter the cash amount or POS (Swipe / EcoCash) amount received.", "error");
+    return false;
+  }
+  if (breakdown.posEco > breakdown.total) {
+    showMessage("saleMessage", "POS (Swipe / EcoCash) amount cannot be greater than the receipt total.", "error");
+    return false;
+  }
+  if (breakdown.received + 0.0001 < breakdown.total) {
+    showMessage("saleMessage", "Amount received is less than the total cost of goods.", "error");
+    return false;
+  }
+  return true;
+};
+
+function printHtmlDocument(title, html, delay = 700) {
+  let iframe = document.getElementById("printFrame");
+  if (!iframe) {
+    iframe = document.createElement("iframe");
+    iframe.id = "printFrame";
+    document.body.appendChild(iframe);
+  }
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  setTimeout(() => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      console.warn("Print failed", e);
+    }
+  }, delay);
+}
+
+function receiptQrText(receipt) {
+  return [
+    "Liquor Republic POS",
+    `Receipt: ${receipt.invoiceNumber || "PENDING"}`,
+    `Date: ${receipt.dateText}`,
+    `Currency: ${receipt.currency}`,
+    `Total: ${receipt.total.toFixed(2)}`,
+    `Cashier: ${receipt.cashier}`,
+    "Fiscalisation: Pending ZIMRA response"
+  ].join(" | ");
+}
+
+function saleReceiptHtml(receipt) {
+  const rows = receipt.items.map(item => {
+    const unit = Number(item.unit_price || 0) * receipt.rate;
+    const line = Number(item.line_total || 0) * receipt.rate;
+    return `<tr><td>${escapeHtml(item.product_name)}</td><td>${item.quantity}</td><td>${formatCurrency(unit, receipt.currency)}</td><td>${formatCurrency(line, receipt.currency)}</td></tr>`;
+  }).join("");
+  const qrText = receiptQrText(receipt);
+  return `<!doctype html><html><head><title>Receipt ${escapeHtml(receipt.invoiceNumber)}</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>
+    <style>
+      body{font-family:Arial, sans-serif;margin:0;padding:12px;color:#111;width:80mm;font-size:12px}.center{text-align:center}.muted{color:#555}h2{margin:0 0 4px;font-size:18px}table{width:100%;border-collapse:collapse;margin:8px 0}th,td{border-bottom:1px dashed #999;padding:5px 2px;text-align:left}th:last-child,td:last-child{text-align:right}.totals{margin-top:8px}.totals div{display:flex;justify-content:space-between;margin:3px 0}.qr{display:flex;justify-content:center;margin-top:10px}.line{border-top:1px dashed #999;margin:8px 0}@media print{body{width:80mm}.no-print{display:none}}
+    </style></head><body>
+      <div class="center"><h2>Liquor Republic</h2><div class="muted">Point of Sale Receipt</div></div>
+      <div class="line"></div>
+      <div><strong>Receipt:</strong> ${escapeHtml(receipt.invoiceNumber || "Pending")}</div>
+      <div><strong>Date:</strong> ${escapeHtml(receipt.dateText)}</div>
+      <div><strong>Cashier:</strong> ${escapeHtml(receipt.cashier)}</div>
+      <div><strong>Currency:</strong> ${escapeHtml(receipt.currency)}</div>
+      <table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="totals">
+        <div><span>Total</span><strong>${formatCurrency(receipt.total, receipt.currency)}</strong></div>
+        <div><span>Cash</span><span>${formatCurrency(receipt.cash, receipt.currency)}</span></div>
+        <div><span>POS (Swipe / EcoCash)</span><span>${formatCurrency(receipt.posEco, receipt.currency)}</span></div>
+        <div><span>Received</span><span>${formatCurrency(receipt.received, receipt.currency)}</span></div>
+        <div><span>Change</span><strong>${formatCurrency(receipt.change, receipt.currency)}</strong></div>
+      </div>
+      <div class="line"></div>
+      <div class="center"><strong>Fiscalisation QR Code</strong><div class="muted">ZIMRA QR area</div><div id="fiscalQr" class="qr"></div><small>${escapeHtml(qrText)}</small></div>
+      <div class="center" style="margin-top:12px">Thank you for shopping with us.</div>
+      <script>try{new QRCode(document.getElementById('fiscalQr'),{text:${JSON.stringify(qrText)},width:110,height:110});}catch(e){document.getElementById('fiscalQr').innerHTML='<div style="border:1px solid #111;padding:20px">QR</div>';}<\/script>
+    </body></html>`;
+}
+
+function transferSlipHtml(code, currency, items) {
+  const rows = items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${item.quantity}</td></tr>`).join("");
+  return `<!doctype html><html><head><title>Transfer ${escapeHtml(code)}</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+    <style>body{font-family:Arial,sans-serif;width:80mm;padding:12px;margin:0;font-size:12px}.center{text-align:center}h2{margin:0 0 4px}.code{font-size:18px;font-weight:bold;margin:8px 0}table{width:100%;border-collapse:collapse;margin-top:8px}td,th{border-bottom:1px dashed #aaa;padding:5px 2px;text-align:left}.muted{color:#555}.line{border-top:1px dashed #999;margin:8px 0}@media print{body{width:80mm}}</style>
+    </head><body>
+      <div class="center"><h2>Liquor Republic</h2><div class="muted">Transfer Transaction</div><div class="code">${escapeHtml(code)}</div><svg id="barcode"></svg></div>
+      <div class="line"></div><div><strong>Currency:</strong> ${escapeHtml(currency || "USD")}</div>
+      <table><thead><tr><th>Product</th><th>Qty</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted">Another cashier must click Receive Transaction and scan or type this code.</p>
+      <script>try{JsBarcode('#barcode',${JSON.stringify(code)},{format:'CODE128',displayValue:true,width:1.5,height:60});}catch(e){}<\/script>
+    </body></html>`;
+}
+
+printTransferSlip = function (code, currency, items = receiptItems) {
+  if (!code) return;
+  printHtmlDocument(`Transfer ${code}`, transferSlipHtml(code, currency, items), 800);
+};
+
+transferCurrentReceipt = async function () {
+  if (!receiptItems.length) {
+    showMessage("saleMessage", "Add products to the receipt before transferring.", "error");
+    return;
+  }
+  const currency = saleCurrencyValue();
+  const transferItems = receiptItems.map(item => ({ ...item }));
+  const { data, error } = await supabaseClient.rpc("create_transfer_transaction_rpc", {
+    p_items: transferItems.map(item => ({ product_id: item.product_id, quantity: item.quantity })),
+    p_currency: currency
+  });
+  if (error) {
+    showMessage("saleMessage", error.message, "error");
+    return;
+  }
+  const code = data?.transfer_code || data?.code;
+  receiptItems = [];
+  renderReceipt();
+  printTransferSlip(code, currency, transferItems);
+  showMessage("saleMessage", `Transaction transferred. Barcode code: ${escapeHtml(code)}`);
+};
+
+recordSale = async function () {
+  if (!validatePayment()) return;
+  const currency = saleCurrencyValue();
+  const breakdown = getPaymentBreakdown();
+  const paymentMethod = splitPaymentMethodLabel(breakdown);
+  const saleItemsForPrint = receiptItems.map(item => ({ ...item }));
+  const rate = selectedCurrencyRate(currency);
+
+  let data = null;
+  let error = null;
+  const splitPayload = {
+    p_items: receiptItems.map(item => ({ product_id: item.product_id, quantity: item.quantity })),
+    p_currency: currency,
+    p_cash_amount: breakdown.cash,
+    p_pos_amount: breakdown.posEco,
+    p_ecocash_amount: 0
+  };
+
+  let response = await supabaseClient.rpc("record_invoice_sale_split_rpc", splitPayload);
+  if (response.error && String(response.error.message || "").includes("Could not find the function")) {
+    response = await supabaseClient.rpc("record_invoice_sale_rpc", {
+      p_items: splitPayload.p_items,
+      p_currency: currency,
+      p_payment_method: paymentMethod,
+      p_amount_received: breakdown.received
+    });
+  }
+  data = response.data;
+  error = response.error;
+
+  if (error) {
+    showMessage("saleMessage", error.message, "error");
+    return;
+  }
+
+  const result = data || {};
+  const receipt = {
+    invoiceNumber: result.invoice_number || result.receipt_number || result.invoice_id || "",
+    dateText: new Date().toLocaleString(),
+    cashier: currentProfile?.full_name || currentUser?.email || "Cashier",
+    currency,
+    rate,
+    items: saleItemsForPrint,
+    total: breakdown.total,
+    cash: breakdown.cash,
+    posEco: breakdown.posEco,
+    received: breakdown.received,
+    change: breakdown.change
+  };
+
+  receiptItems = [];
+  ["cashAmountReceived", "posEcoAmountReceived", "amountReceived"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  renderReceipt();
+  await loadAll();
+
+  const saleId = typeof result === "string" ? result : (result.sale_id || result.id);
+  const recordedSale = sales.find(s => String(s.id) === String(saleId)) || sales[0];
+  if (recordedSale) {
+    await enqueuePastelSync("sale_invoice", "sales", recordedSale.id || `${recordedSale.created_at}-${recordedSale.product_id}`, buildPastelSalePayload(recordedSale));
+    await loadPastelSyncJobs();
+  }
+
+  showMessage("saleMessage", `Transaction successful.${breakdown.change > 0 ? ` Change: ${formatCurrency(breakdown.change, currency)}.` : ""}`);
+  printHtmlDocument(`Receipt ${receipt.invoiceNumber}`, saleReceiptHtml(receipt), 900);
+  render();
+  await refreshCashupReports();
+};
+
+printCashupReport = function (printout) {
+  const reports = printout.batch ? printout.printouts : [printout];
+  const sections = reports.map(r => {
+    const currency = r.currency || "USD";
+    const productRows = (r.products || []).map(p => `<tr><td>${escapeHtml(p.product_name)}</td><td>${p.quantity}</td><td>${formatCurrency(p.total || 0, currency)}</td></tr>`).join("") || `<tr><td colspan="3">No product lines.</td></tr>`;
+    return `<section style="page-break-after:always">
+      <h2>Liquor Republic Cashup Report</h2>
+      <p><strong>Cashier:</strong> ${escapeHtml(r.cashier_name || "")}</p>
+      <p><strong>Date:</strong> ${escapeHtml(r.cashup_date || todayKey())} | <strong>Currency:</strong> ${escapeHtml(currency)}</p>
+      <h3>Money Collected</h3>
+      <table><tr><th>Payment Method</th><th>Amount</th></tr>
+      <tr><td>Cash</td><td>${formatCurrency(r.system_cash || 0, currency)}</td></tr>
+      <tr><td>POS (Swipe / EcoCash)</td><td>${formatCurrency(r.system_pos || 0, currency)}</td></tr>
+      <tr><td>Total</td><td>${formatCurrency(r.total_amount || 0, currency)}</td></tr></table>
+      <h3>Products Sold</h3>
+      <table><thead><tr><th>Product</th><th>Qty</th><th>Total</th></tr></thead><tbody>${productRows}</tbody></table>
+      <div class="signature-grid">
+        <div class="signature-line"><strong>Cashier Signature</strong><br/>Name: ${escapeHtml(r.cashier_name || "")}</div>
+        <div class="signature-line"><strong>Supervisor Signature</strong><br/>Name: ${escapeHtml(currentProfile?.full_name || currentUser?.email || "Supervisor")}</div>
+      </div>
+    </section>`;
+  }).join("");
+  const html = `<!doctype html><html><head><title>Cashup Printout</title><style>body{font-family:Arial;padding:20px}h2{color:#11385c}table{width:100%;border-collapse:collapse;margin-bottom:18px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f3f4f6}.signature-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:28px;margin-top:32px}.signature-line{border-top:1px solid #111;padding-top:8px;min-height:48px}@media print{section{page-break-after:always}}</style></head><body>${sections}</body></html>`;
+  printHtmlDocument("Cashup Printout", html, 600);
+};
+
+/* Quotation module */
+function quoteCurrencyValue() { return document.getElementById("quoteCurrency")?.value || "USD"; }
+function quoteCurrencyRate() { return selectedCurrencyRate(quoteCurrencyValue()); }
+function quoteTotal() { return Number((quoteItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0) * quoteCurrencyRate()).toFixed(2)); }
+function quoteItemCount() { return quoteItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0); }
+
+function onQuoteProductChange() {
+  const product = getProductById(document.getElementById("quoteProduct")?.value);
+  const qtyInput = document.getElementById("quoteQuantity");
+  const hint = document.getElementById("quoteProductHint");
+  if (qtyInput) qtyInput.value = "1";
+  if (qtyInput && product) qtyInput.max = Number(product.quantity || 0);
+  if (hint) hint.textContent = product ? `${product.name}: ${product.quantity} available at ${money(product.selling_price)} each.` : "";
+}
+
+function handleQuoteQuantityKey(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addProductToQuote();
+  }
+}
+
+function addProductToQuote() {
+  const productId = document.getElementById("quoteProduct")?.value;
+  const quantity = Number(document.getElementById("quoteQuantity")?.value || 1);
+  const product = getProductById(productId);
+  if (!product) { showMessage("quoteMessage", "Select a product first.", "error"); return; }
+  if (!Number.isInteger(quantity) || quantity <= 0) { showMessage("quoteMessage", "Enter a valid quantity.", "error"); return; }
+  const existing = quoteItems.find(item => String(item.product_id) === String(product.id));
+  if (existing) {
+    existing.quantity += quantity;
+    existing.line_total = Number((existing.quantity * existing.unit_price).toFixed(2));
+  } else {
+    quoteItems.push({ product_id: product.id, product_name: product.name, quantity, unit_price: Number(product.selling_price || 0), line_total: Number((quantity * Number(product.selling_price || 0)).toFixed(2)) });
+  }
+  const q = document.getElementById("quoteQuantity");
+  if (q) q.value = "1";
+  const msg = document.getElementById("quoteMessage");
+  if (msg) msg.innerHTML = "";
+  renderQuote();
+}
+
+function removeQuoteItem(productId) {
+  quoteItems = quoteItems.filter(item => String(item.product_id) !== String(productId));
+  renderQuote();
+}
+
+function clearQuote() {
+  quoteItems = [];
+  renderQuote();
+  showMessage("quoteMessage", "Quotation cleared.");
+}
+
+function renderQuote() {
+  const table = document.getElementById("quoteItemsTable");
+  if (!table) return;
+  const currency = quoteCurrencyValue();
+  const rate = quoteCurrencyRate();
+  table.innerHTML = "";
+  quoteItems.forEach(item => {
+    table.innerHTML += `<tr><td>${escapeHtml(item.product_name)}</td><td>${item.quantity}</td><td>${formatCurrency(Number(item.unit_price || 0) * rate, currency)}</td><td>${formatCurrency(Number(item.line_total || 0) * rate, currency)}</td><td><button class="danger small-btn" onclick="removeQuoteItem('${item.product_id}')">Remove</button></td></tr>`;
+  });
+  if (!table.innerHTML) table.innerHTML = `<tr><td colspan="5">No products added to quotation yet.</td></tr>`;
+  const totalEl = document.getElementById("quoteGrandTotal");
+  const countEl = document.getElementById("quoteItemCount");
+  if (totalEl) totalEl.textContent = formatCurrency(quoteTotal(), currency);
+  if (countEl) countEl.textContent = quoteItemCount();
+}
+
+function quotationHtml() {
+  const currency = quoteCurrencyValue();
+  const rate = quoteCurrencyRate();
+  const quoteNo = "QTN-" + new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+  const rows = quoteItems.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${item.quantity}</td><td>${formatCurrency(Number(item.unit_price || 0) * rate, currency)}</td><td>${formatCurrency(Number(item.line_total || 0) * rate, currency)}</td></tr>`).join("");
+  return `<!doctype html><html><head><title>Quotation ${quoteNo}</title><style>body{font-family:Arial;padding:22px;color:#111}h1,h2{color:#11385c;margin-bottom:4px}.muted{color:#666}.top{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #11385c;padding-bottom:12px;margin-bottom:18px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #ddd;padding:9px;text-align:left}th{background:#f3f4f6}.total{text-align:right;font-size:20px;margin-top:18px}.terms{margin-top:28px;font-size:13px;color:#444}.sign{margin-top:50px;border-top:1px solid #111;width:260px;padding-top:8px}@media print{button{display:none}}</style></head><body><div class="top"><div><h1>Liquor Republic</h1><div class="muted">Customer Quotation</div></div><div><strong>Quotation No:</strong> ${quoteNo}<br/><strong>Date:</strong> ${new Date().toLocaleDateString()}<br/><strong>Currency:</strong> ${currency}</div></div><table><thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="total"><strong>Total: ${formatCurrency(quoteTotal(), currency)}</strong></div><div class="terms"><strong>Note:</strong> This is a quotation only. Stock is not deducted until a sale is recorded. Prices are subject to availability and confirmation.</div><div class="sign">Authorised Signature</div></body></html>`;
+}
+
+function printQuotation() {
+  if (!quoteItems.length) { showMessage("quoteMessage", "Add products to the quotation first.", "error"); return; }
+  printHtmlDocument("Quotation", quotationHtml(), 600);
+}
+
+const fillDropdowns_before_v15 = fillDropdowns;
+fillDropdowns = function () {
+  fillDropdowns_before_v15();
+  const quoteSelect = document.getElementById("quoteProduct");
+  if (quoteSelect) {
+    const currentValue = quoteSelect.value;
+    quoteSelect.innerHTML = "";
+    products.forEach(p => {
+      const disabled = Number(p.quantity || 0) <= 0 ? "disabled" : "";
+      quoteSelect.innerHTML += `<option value="${p.id}" ${disabled}>${escapeHtml(p.name)} — ${p.quantity} left — ${money(p.selling_price)}</option>`;
+    });
+    if (currentValue && Array.from(quoteSelect.options).some(o => o.value === currentValue)) quoteSelect.value = currentValue;
+    onQuoteProductChange();
+  }
+  renderQuote();
+  onSaleCurrencyChange();
+};
+
+const openPanel_before_v15 = openPanel;
+openPanel = function (panelId) {
+  openPanel_before_v15(panelId);
+  if (panelId === "quotationPanel") renderQuote();
+  if (panelId === "salesPanel") onSaleCurrencyChange();
+};
